@@ -17,6 +17,10 @@ class Gen3ReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     run_name = ""
     resume = False
     empirical_normalization = False
+    obs_groups = {
+        "actor": ["policy"],
+        "critic": ["policy"],
+    }
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_hidden_dims=[64, 64],

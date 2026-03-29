@@ -51,7 +51,7 @@ class ReachPolicy(Node):
     ]
     
     # ROS topics and joint names
-    STATE_TOPIC = '/joint_trajectory_controller/state'
+    STATE_TOPIC = '/joint_trajectory_controller/controller_state'
     CMD_TOPIC = '/joint_trajectory_controller/joint_trajectory'
 
     # ros2 topic pub /joint_trajectory_controller/joint_trajectory trajectory_msgs/JointTrajectory "{
@@ -118,12 +118,12 @@ class ReachPolicy(Node):
         """
         actual_pos = {}
         for i, joint_name in enumerate(msg.joint_names):
-            joint_pos = msg.actual.positions[i]
+            joint_pos = msg.feedback.positions[i]
             actual_pos[joint_name] = joint_pos
         self.current_pos = actual_pos
-        
+
         # Update the robot's state with current joint positions and velocities.
-        self.robot.update_joint_state(msg.actual.positions, msg.actual.velocities)
+        self.robot.update_joint_state(msg.feedback.positions, msg.feedback.velocities)
 
     def map_joint_angle(self, pos: float, index: int) -> float:
         """
