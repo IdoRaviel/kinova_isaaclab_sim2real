@@ -4,11 +4,11 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 
 @configclass
-class Gen3GraspPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class Gen3LiftAndPlacePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 3000
     save_interval = 50
-    experiment_name = "grasp_gen3"
+    experiment_name = "lift_and_place_gen3"
     run_name = ""
     resume = False
     clip_actions = 1.0

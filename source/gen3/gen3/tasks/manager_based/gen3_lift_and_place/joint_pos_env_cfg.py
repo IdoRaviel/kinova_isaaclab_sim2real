@@ -23,7 +23,7 @@ from gen3.assets import KINOVA_GEN3_2F85_CFG  # isort: skip
 
 
 @configclass
-class Gen3GraspEnvCfg(LiftEnvCfg):
+class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -152,7 +152,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
 
 
 @configclass
-class Gen3GraspEnvCfg_PLAY(Gen3GraspEnvCfg):
+class Gen3LiftAndPlaceEnvCfg_PLAY(Gen3LiftAndPlaceEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         # make a smaller scene for play
