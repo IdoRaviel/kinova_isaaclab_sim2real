@@ -29,13 +29,15 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         super().__post_init__()
 
         # Set Gen3+gripper as robot
-        self.scene.robot = KINOVA_GEN3_2F85_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = KINOVA_GEN3_2F85_CFG.replace(
+            prim_path="{ENV_REGEX_NS}/Robot"
+        )
 
         # Set actions for Gen3 arm (7 joints, continuous)
         self.actions.arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["gen3_joint_[1-7]"],
-            scale=0.2, # Reduced to stop the "smashing" from Day 1
+            scale=0.2,  # Reduced to stop the "smashing" from Day 1
             use_default_offset=True,
         )
         # Set actions for Robotiq gripper (binary open/close)
@@ -73,7 +75,9 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         # Set cube as object — random position on table
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]
+            ),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -89,7 +93,9 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         )
 
         # Add object orientation to observations
-        self.observations.policy.object_orientation = ObsTerm(func=mdp.object_orientation_in_robot_root_frame)
+        self.observations.policy.object_orientation = ObsTerm(
+            func=mdp.object_orientation_in_robot_root_frame
+        )
 
         # Increase reaching reward (base LiftEnvCfg has it at 1.0)
         self.rewards.reaching_object.weight = 2.0
@@ -119,20 +125,29 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         # End-effector frame transformer
         marker_cfg = FRAME_MARKER_CFG.copy()
         marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        marker_cfg.markers["connecting_line"].radius = 0.0001
+        marker_cfg.markers["connecting_line"].height = 0.0001
         marker_cfg.prim_path = "/Visuals/FrameTransformer"
         self.scene.ee_frame = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/gen3_base_link",
-            debug_vis=False,
+            prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
+            debug_vis=True,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/gen3_bracelet_link",
+                    prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
                     name="end_effector",
                     offset=OffsetCfg(
-                        pos=[0.0, 0.0, -0.18],
+                        pos=[0.0, 0.0, 0.10],
                     ),
                 ),
             ],
+        )
+
+        # Hide the command's current-pose marker — only show the goal target
+        self.commands.object_pose.current_pose_visualizer_cfg.markers["frame"].scale = (
+            0.0,
+            0.0,
+            0.0,
         )
 
 
