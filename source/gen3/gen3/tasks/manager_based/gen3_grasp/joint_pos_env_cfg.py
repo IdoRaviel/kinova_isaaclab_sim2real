@@ -152,13 +152,6 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
             weight=1000.0,
         )
 
-        # Lifting: binary bonus for clearing 4cm threshold
-        self.rewards.object_lifted_binary = RewTerm(
-            func=mdp.object_lifted_binary,
-            params={"threshold": 0.04, "table_z": 0.055},
-            weight=50.0,
-        )
-
         # Success bonus: one-time spike at 15cm (the final goal)
         self.rewards.cube_lifted_bonus = RewTerm(
             func=mdp.cube_lifted_bonus,
