@@ -18,7 +18,7 @@ from . import mdp
 ##
 # Pre-defined configs
 ##
-from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
+from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
 from gen3.assets import KINOVA_GEN3_2F85_CFG  # isort: skip
 
 
@@ -77,10 +77,10 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
             },
             close_command_expr={
                 "gen3_robotiq_85_left_knuckle_joint": 0.8,
-                "gen3_robotiq_85_right_knuckle_joint": 0.8,
-                "gen3_robotiq_85_left_inner_knuckle_joint": 0.8,
-                "gen3_robotiq_85_right_inner_knuckle_joint": 0.8,
-                "gen3_robotiq_85_left_finger_tip_joint": 0.8,
+                "gen3_robotiq_85_right_knuckle_joint": 0.8,    # axis flipped in USD
+                "gen3_robotiq_85_left_inner_knuckle_joint": -0.8,  # axis flipped in USD
+                "gen3_robotiq_85_right_inner_knuckle_joint": -0.8,
+                "gen3_robotiq_85_left_finger_tip_joint": -0.8,
                 "gen3_robotiq_85_right_finger_tip_joint": 0.8,
             },
         )
@@ -185,10 +185,8 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         }
 
         # --- End-effector frame transformer (same fix as lift-and-place) ---
-        marker_cfg = FRAME_MARKER_CFG.copy()
-        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-        marker_cfg.markers["connecting_line"].radius = 0.0001
-        marker_cfg.markers["connecting_line"].height = 0.0001
+        marker_cfg = SPHERE_MARKER_CFG.copy()
+        marker_cfg.markers["sphere"].radius = 0.01
         marker_cfg.prim_path = "/Visuals/FrameTransformer"
         self.scene.ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
@@ -199,7 +197,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
                     prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
                     name="end_effector",
                     offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.10],
+                        pos=[0.0, 0.0, 0.127],
                     ),
                 ),
             ],
