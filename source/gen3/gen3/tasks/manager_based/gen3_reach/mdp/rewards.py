@@ -3,24 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from __future__ import annotations
+"""Local reward functions for the Gen3 reach task.
 
-import torch
-from typing import TYPE_CHECKING
-
-from isaaclab.assets import Articulation
-from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import wrap_to_pi
-
-if TYPE_CHECKING:
-    from isaaclab.envs import ManagerBasedRLEnv
-
-
-def joint_pos_target_l2(env: ManagerBasedRLEnv, target: float, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    """Penalize joint position deviation from a target value."""
-    # extract the used quantities (to enable type-hinting)
-    asset: Articulation = env.scene[asset_cfg.name]
-    # wrap the joint positions to (-pi, pi)
-    joint_pos = wrap_to_pi(asset.data.joint_pos[:, asset_cfg.joint_ids])
-    # compute the reward
-    return torch.sum(torch.square(joint_pos - target), dim=1)
+The reach task uses only the base Isaac Lab reward functions (position_command_error,
+position_command_error_tanh, orientation_command_error, action_rate_l2, joint_vel_l2),
+configured in joint_pos_env_cfg.py via weight/body_name overrides on the inherited
+RewardsCfg terms. No custom reward functions are required here.
+"""
