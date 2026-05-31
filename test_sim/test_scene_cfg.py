@@ -7,7 +7,11 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdF
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-USD_PATH = "/home/student_spring26/projects/kinova_isaaclab_sim2real/test_sim/kinova_gen3_robotiq_2f_140.usd"
+import os
+
+USD_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "kinova_gen3_robotiq_2f_140.usd"
+)
 
 GRIPPER_OPEN = {"finger_joint": 0.0}
 GRIPPER_CLOSE = {"finger_joint": 0.700}

@@ -9,17 +9,17 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
-from isaaclab.managers import TerminationTermCfg as DoneTerm
 
 from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
 
 from . import mdp
+from .agents.rsl_rl_ppo_cfg import Gen3GraspPPORunnerCfg as _RunnerCfg
 
 ##
 # Pre-defined configs
 ##
 from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
-from gen3.assets import KINOVA_GEN3_2F85_CFG  # isort: skip
+from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
@@ -29,23 +29,18 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         super().__post_init__()
 
         # --- Robot ---
-        self.scene.robot = KINOVA_GEN3_2F85_CFG.replace(
+        self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
             init_state=ArticulationCfg.InitialStateCfg(
                 joint_pos={
-                    "gen3_joint_1": 0.0,
-                    "gen3_joint_2": 0.3,
-                    "gen3_joint_3": 0.0,
-                    "gen3_joint_4": 1.4,
-                    "gen3_joint_5": 0.0,
-                    "gen3_joint_6": 0.9,
-                    "gen3_joint_7": -1.57,
-                    "gen3_robotiq_85_left_knuckle_joint": 0.0,
-                    "gen3_robotiq_85_right_knuckle_joint": 0.0,
-                    "gen3_robotiq_85_left_inner_knuckle_joint": 0.0,
-                    "gen3_robotiq_85_right_inner_knuckle_joint": 0.0,
-                    "gen3_robotiq_85_left_finger_tip_joint": 0.0,
-                    "gen3_robotiq_85_right_finger_tip_joint": 0.0,
+                    "joint_1": 0.0,
+                    "joint_2": 0.3,
+                    "joint_3": 0.0,
+                    "joint_4": 1.8,
+                    "joint_5": 0.0,
+                    "joint_6": 0.7,
+                    "joint_7": 0.0,
+                    "finger_joint": 0.0,
                 }
             ),
         )
@@ -53,51 +48,46 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         # --- Actions: arm (7 joints) + gripper (binary open/close) ---
         self.actions.arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
-            joint_names=["gen3_joint_[1-7]"],
-            scale=0.2,
+            joint_names=["joint_[1-7]"],
+            scale=0.5,
             use_default_offset=True,
         )
         self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
             asset_name="robot",
-            joint_names=[
-                "gen3_robotiq_85_left_knuckle_joint",
-                "gen3_robotiq_85_right_knuckle_joint",
-                "gen3_robotiq_85_left_inner_knuckle_joint",
-                "gen3_robotiq_85_right_inner_knuckle_joint",
-                "gen3_robotiq_85_left_finger_tip_joint",
-                "gen3_robotiq_85_right_finger_tip_joint",
-            ],
-            open_command_expr={
-                "gen3_robotiq_85_left_knuckle_joint": 0.0,
-                "gen3_robotiq_85_right_knuckle_joint": 0.0,
-                "gen3_robotiq_85_left_inner_knuckle_joint": 0.0,
-                "gen3_robotiq_85_right_inner_knuckle_joint": 0.0,
-                "gen3_robotiq_85_left_finger_tip_joint": 0.0,
-                "gen3_robotiq_85_right_finger_tip_joint": 0.0,
-            },
-            close_command_expr={
-                "gen3_robotiq_85_left_knuckle_joint": 0.8,
-                "gen3_robotiq_85_right_knuckle_joint": 0.8,    # axis flipped in USD
-                "gen3_robotiq_85_left_inner_knuckle_joint": -0.8,  # axis flipped in USD
-                "gen3_robotiq_85_right_inner_knuckle_joint": -0.8,
-                "gen3_robotiq_85_left_finger_tip_joint": -0.8,
-                "gen3_robotiq_85_right_finger_tip_joint": 0.8,
-            },
+            joint_names=["finger_joint"],
+            open_command_expr={"finger_joint": 0.0},
+            close_command_expr={"finger_joint": 0.7},
         )
 
-        # --- Command: not used for grasp-only, disable its visualization ---
-        self.commands.object_pose.body_name = "gen3_bracelet_link"
-        self.commands.object_pose.debug_vis = False
+        # --- Command: random 3D target for the cube (pick-and-place) ---
+        self.commands.object_pose.body_name = "end_effector_link"
+        self.commands.object_pose.debug_vis = True
+        self.commands.object_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.35, 0.65),
+            pos_y=(-0.2, 0.2),
+            pos_z=(0.30, 0.65),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        )
+        target_marker_cfg = SPHERE_MARKER_CFG.copy()
+        target_marker_cfg.markers["sphere"].radius = 0.02
+        target_marker_cfg.prim_path = "/Visuals/Command/goal_pose"
+        self.commands.object_pose.goal_pose_visualizer_cfg = target_marker_cfg
+        current_marker_cfg = SPHERE_MARKER_CFG.copy()
+        current_marker_cfg.markers["sphere"].visible = False
+        current_marker_cfg.prim_path = "/Visuals/Command/current_pose"
+        self.commands.object_pose.current_pose_visualizer_cfg = current_marker_cfg
 
         # --- Object: cube spawned directly below the EE default pose ---
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.5, 0, 0.055], rot=[1, 0, 0, 0]
+                pos=[0.43, 0, 0.055], rot=[1, 0, 0, 0]
             ),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                scale=(0.8, 0.8, 0.8),
+                scale=(1.2, 1.2, 1.2),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -110,94 +100,71 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         )
 
         # --- Observations ---
-        # Remove target_object_position (uses the command we don't need)
-        self.observations.policy.target_object_position = None
-        # Add object orientation
         self.observations.policy.object_orientation = ObsTerm(
             func=mdp.object_orientation_in_robot_root_frame
         )
 
         # --- Rewards ---
-        # Remove inherited rewards that don't apply to grasp-only
         self.rewards.reaching_object = None
         self.rewards.lifting_object = None
         self.rewards.object_goal_tracking = None
         self.rewards.object_goal_tracking_fine_grained = None
 
-        # Reaching: wider tanh for better global gradient
-        self.rewards.reaching_object_tanh = RewTerm(
-            func=mdp.object_distance_tanh,
-            params={"std": 0.15},
-            weight=2.0,
+        # Penalty: keep EE near cube (don't drift away)
+        self.rewards.ee_to_cube = RewTerm(
+            func=mdp.ee_to_cube_distance,
+            params={"std": 0.1},
+            weight=-0.2,
         )
 
-        # Dense Grasp: subtle guide to keep fingers shut
-        self.rewards.dense_finger_closure = RewTerm(
-            func=mdp.dense_finger_closure,
-            params={"std": 0.05},
-            weight=1.0,
+        # Coarse pull: L2 distance from cube to random 3D target (constant gradient)
+        self.rewards.cube_to_target = RewTerm(
+            func=mdp.cube_to_target_distance_l2,
+            params={"command_name": "object_pose"},
+            weight=-1.0,
+        )
+        # Fine-grained bonus: sharp positive reward when cube is near target
+        self.rewards.cube_to_target_fine = RewTerm(
+            func=mdp.cube_to_target_distance_tanh,
+            params={"std": 0.1, "command_name": "object_pose"},
+            weight=+0.25,
         )
 
-        # Stability: 5.0 bonus — a solid anchor for the grasp
-        self.rewards.stable_grasp = RewTerm(
-            func=mdp.stable_grasp_duration,
-            params={"threshold": 0.05, "duration": 0.5},
-            weight=4.0,
-        )
-
-        # Dense lifting: massive upward pull to overcome table-safety
-        self.rewards.object_height_reward = RewTerm(
-            func=mdp.object_height_reward,
-            params={"table_z": 0.055},
-            weight=1000.0,
-        )
-
-        # Success bonus: one-time spike at 15cm (the final goal)
-        self.rewards.cube_lifted_bonus = RewTerm(
-            func=mdp.cube_lifted_bonus,
-            params={"height_threshold": 0.15},
-            weight=100.0,
-        )
-
-        # Action rate penalty: start low, ramp up via curriculum
+        # Action/joint penalties: start at zero, ramp very slowly
         self.rewards.action_rate.weight = 0.0
-        # Joint velocity penalty: start low, ramp up via curriculum
         self.rewards.joint_vel.weight = 0.0
 
-        # --- Termination: end episode on success ---
-        self.terminations.cube_lifted_success = DoneTerm(
-            func=mdp.cube_lifted_success,
-            params={"height_threshold": 0.15},
-        )
-
-        # --- Curriculum: gradually increase penalties to enforce smoothness ---
-        # Ramp from 0.0 to -5e-4 over ~2000 iterations (98M steps)
+        # --- Curriculum: ramp penalties over first 30% of training ---
+        # num_steps scales automatically when max_iterations or num_steps_per_env changes
+        _runner = _RunnerCfg()
+        _total_steps = _runner.max_iterations * _runner.num_steps_per_env
+        _curriculum_steps = int(_total_steps * 0.7)
         self.curriculum.action_rate.params["weight"] = -5e-4
-        self.curriculum.action_rate.params["num_steps"] = 98_000_000
+        self.curriculum.action_rate.params["num_steps"] = _curriculum_steps
         self.curriculum.joint_vel.params["weight"] = -5e-4
-        self.curriculum.joint_vel.params["num_steps"] = 98_000_000
+        self.curriculum.joint_vel.params["num_steps"] = _curriculum_steps
 
-        # --- Object reset: small random range near EE ---
+        # --- Object reset: small random range near default spawn ---
         self.events.reset_object_position.params["pose_range"] = {
-            "x": (-0.02, 0.02),
-            "y": (-0.02, 0.02),
+            "x": (-0.01, 0.01),
+            "y": (-0.01, 0.01),
             "z": (0.0, 0.0),
         }
 
-        # --- End-effector frame transformer (same fix as lift-and-place) ---
+        # --- EE frame: offset from wrist flange to approximate finger center ---
         marker_cfg = SPHERE_MARKER_CFG.copy()
         marker_cfg.markers["sphere"].radius = 0.01
         marker_cfg.prim_path = "/Visuals/FrameTransformer"
         self.scene.ee_frame = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
+            prim_path="{ENV_REGEX_NS}/Robot/gen3n7_instanceable/end_effector_link",
             debug_vis=True,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/gen3_robotiq_85_base_link",
+                    prim_path="{ENV_REGEX_NS}/Robot/gen3n7_instanceable/end_effector_link",
                     name="end_effector",
                     offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.127],
+                        pos=[0.0, 0.0, 0.21],
                     ),
                 ),
             ],
@@ -208,8 +175,6 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
 class Gen3GraspEnvCfg_PLAY(Gen3GraspEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        # make a smaller scene for play
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
-        # disable randomization for play
         self.observations.policy.enable_corruption = False
