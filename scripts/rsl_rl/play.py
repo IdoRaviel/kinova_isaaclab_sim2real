@@ -129,6 +129,16 @@ def main():
             actions = policy(obs)
             # env stepping
             obs, _, _, _ = env.step(actions)
+
+        if timestep % 50 == 0:
+            from isaaclab.utils.math import combine_frame_transforms
+            obj = env.unwrapped.scene["object"]
+            robot = env.unwrapped.scene["robot"]
+            cmd = env.unwrapped.command_manager.get_command("object_pose")
+            target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, cmd[:, :3])
+            dist = (obj.data.root_pos_w - target_w).norm(dim=1).mean()
+            print(f"[step {timestep}] dist_goal: {dist:.3f} m")
+
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

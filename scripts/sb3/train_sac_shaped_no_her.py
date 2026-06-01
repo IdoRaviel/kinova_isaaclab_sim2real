@@ -1,25 +1,20 @@
 import argparse
-import os
-import re
+from datetime import datetime
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-
 parser = argparse.ArgumentParser(description="Train Kinova Gen3 2F140 with SAC shaped reward, no HER.")
-parser.add_argument("--task", type=str, default="Gen3-LiftAndPlace-v0")
-parser.add_argument("--total_timesteps", type=int, default=1_000_000)
-parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--log_name", type=str, default="sac_shaped_no_her_2f140")
+parser.add_argument("--task", type=str, default="Gen3-Grasp-v0")
+parser.add_argument("--seed", type=int, default=None, help="Override seed from config.")
 parser.add_argument("--resume", type=str, default=None)
-parser.add_argument("--max_dist", type=float, default=0.70)
-parser.add_argument("--success_threshold", type=float, default=0.05)
-parser.add_argument("--checkpoint_freq", type=int, default=200_000)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+
+import os
 
 import gymnasium as gym
 import numpy as np
@@ -27,13 +22,24 @@ import torch
 from gymnasium import spaces
 
 import gen3.tasks  # noqa: F401
-from isaaclab_tasks.utils import parse_env_cfg
 from isaaclab.utils.math import combine_frame_transforms
+from isaaclab_tasks.utils import parse_env_cfg
 
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList, CheckpointCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise
+
+from gen3.tasks.manager_based.gen3_grasp.agents.sac_cfg import Gen3GraspSACCfg
+from gen3.tasks.manager_based.gen3_grasp.mdp import (
+    ee_to_cube_distance,
+    cube_to_target_distance_l2,
+    cube_to_target_distance_tanh,
+)
+
+cfg = Gen3GraspSACCfg()
+if args_cli.seed is not None:
+    cfg.seed = args_cli.seed
 
 
 class RewardComponentCallback(BaseCallback):
@@ -44,6 +50,7 @@ class RewardComponentCallback(BaseCallback):
         self.window = window
         self.dist_grip = []
         self.dist_goal = []
+        self.fine_bonus = []
         self.successes = []
 
     def _on_step(self) -> bool:
@@ -56,6 +63,8 @@ class RewardComponentCallback(BaseCallback):
                     self.dist_grip.append(info["reward_dist_grip"])
                 if "reward_dist_goal" in info:
                     self.dist_goal.append(info["reward_dist_goal"])
+                if "reward_fine_bonus" in info:
+                    self.fine_bonus.append(info["reward_fine_bonus"])
                 if "is_success" in info:
                     self.successes.append(float(info["is_success"]))
 
@@ -64,6 +73,8 @@ class RewardComponentCallback(BaseCallback):
             self.logger.record("reward/dist_grip", float(np.mean(self.dist_grip[-w:])))
         if self.dist_goal:
             self.logger.record("reward/dist_goal", float(np.mean(self.dist_goal[-w:])))
+        if self.fine_bonus:
+            self.logger.record("reward/fine_bonus", float(np.mean(self.fine_bonus[-w:])))
         if self.successes:
             self.logger.record("rollout/success_rate_custom", float(np.mean(self.successes[-w:])))
 
@@ -71,29 +82,30 @@ class RewardComponentCallback(BaseCallback):
 
 
 class IsaacLabShapedFetchWrapper(gym.Env):
-    """Goal-conditioned Dict env, but no HER.
+    """Goal-conditioned Dict env, no HER.
 
     Observation dict follows Fetch-style structure:
         observation:   policy observation vector from IsaacLab
         achieved_goal: object xyz world position
         desired_goal:  commanded target xyz world position
 
-    Reward follows reward-shaping-no-her:
-        reward = -(distance_gripper_to_object + distance_object_to_goal) / MAX_DIST
+    Reward:  -(dist_grip + dist_goal) / max_dist
+    Both distances are computed via mdp reward functions in rewards.py.
     """
 
     metadata = {"render_modes": []}
 
-    def __init__(self, isaac_env, max_dist=0.70, success_threshold=0.05):
+    def __init__(self, isaac_env, sac_cfg: Gen3GraspSACCfg):
         super().__init__()
         self.isaac_env = isaac_env
         self.unwrapped_env = isaac_env.unwrapped
         self.device = self.unwrapped_env.device
-        self.max_dist = float(max_dist)
-        self.success_threshold = float(success_threshold)
+        self.max_dist = sac_cfg.max_dist
+        self.success_threshold = sac_cfg.success_threshold
 
         self._ep_dist_grip = 0.0
         self._ep_dist_goal = 0.0
+        self._ep_fine_bonus = 0.0
         self._ep_steps = 0
 
         obs_raw = self._reset_isaac()
@@ -106,9 +118,7 @@ class IsaacLabShapedFetchWrapper(gym.Env):
                 "desired_goal": spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32),
             }
         )
-
-        # Your action manager has 8 actions:
-        # 7 arm joints + 1 2F140 finger_joint.
+        # 7 arm joints + 1 finger_joint
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(8,), dtype=np.float32)
 
     def _reset_isaac(self):
@@ -127,19 +137,13 @@ class IsaacLabShapedFetchWrapper(gym.Env):
         obj = self.unwrapped_env.scene["object"]
         return obj.data.root_pos_w[0].detach().cpu().numpy().astype(np.float32)
 
-    def _ee_pos_w(self):
-        ee_frame = self.unwrapped_env.scene["ee_frame"]
-        return ee_frame.data.target_pos_w[0, 0].detach().cpu().numpy().astype(np.float32)
-
     def _desired_goal_w(self):
         robot = self.unwrapped_env.scene["robot"]
         command = self.unwrapped_env.command_manager.get_command("object_pose")
-        desired_pos_b = command[:, :3]
-
         desired_pos_w, _ = combine_frame_transforms(
             robot.data.root_pos_w,
             robot.data.root_quat_w,
-            desired_pos_b,
+            command[:, :3],
         )
         return desired_pos_w[0].detach().cpu().numpy().astype(np.float32)
 
@@ -150,46 +154,34 @@ class IsaacLabShapedFetchWrapper(gym.Env):
             "desired_goal": self._desired_goal_w(),
         }
 
-    def _reward_components(self, obs):
-        ee_pos = self._ee_pos_w()
-        achieved = obs["achieved_goal"]
-        desired = obs["desired_goal"]
-
-        dist_grip = float(np.linalg.norm(ee_pos - achieved))
-        dist_goal = float(np.linalg.norm(achieved - desired))
-
-        return dist_grip, dist_goal
-
-    def _compute_shaped_reward(self, obs):
-        dist_grip, dist_goal = self._reward_components(obs)
-        reward = -((dist_grip + dist_goal) / self.max_dist)
-        return float(reward), dist_grip, dist_goal
+    def _compute_shaped_reward(self):
+        grip_reward = float(ee_to_cube_distance(self.unwrapped_env, std=0.1)[0].item())
+        dist_goal = float(cube_to_target_distance_l2(self.unwrapped_env)[0].item())
+        fine_bonus = float(cube_to_target_distance_tanh(self.unwrapped_env, std=0.1)[0].item())
+        reward = -(grip_reward + dist_goal / self.max_dist) + 0.25 * fine_bonus
+        return reward, grip_reward, dist_goal, fine_bonus
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-
         self._ep_dist_grip = 0.0
         self._ep_dist_goal = 0.0
+        self._ep_fine_bonus = 0.0
         self._ep_steps = 0
-
         obs_raw = self._reset_isaac()
-        obs = self._make_obs(obs_raw)
-
-        return obs, {"is_success": False}
+        return self._make_obs(obs_raw), {"is_success": False}
 
     def step(self, action):
         action = np.asarray(action, dtype=np.float32)
         action = np.clip(action, self.action_space.low, self.action_space.high)
-
         action_t = torch.tensor(action, dtype=torch.float32, device=self.device).unsqueeze(0)
 
         obs_raw, _, terminated, truncated, extras = self.isaac_env.step(action_t)
         obs = self._make_obs(obs_raw)
+        reward, grip_reward, dist_goal, fine_bonus = self._compute_shaped_reward()
 
-        reward, dist_grip, dist_goal = self._compute_shaped_reward(obs)
-
-        self._ep_dist_grip += dist_grip
+        self._ep_dist_grip += grip_reward
         self._ep_dist_goal += dist_goal
+        self._ep_fine_bonus += fine_bonus
         self._ep_steps += 1
 
         n = max(self._ep_steps, 1)
@@ -201,9 +193,10 @@ class IsaacLabShapedFetchWrapper(gym.Env):
         info = {
             "is_success": is_success,
             "goal_distance": dist_goal,
-            "gripper_object_distance": dist_grip,
-            "reward_dist_grip": -self._ep_dist_grip / (n * self.max_dist),
+            "gripper_object_distance": grip_reward,
+            "reward_dist_grip": -self._ep_dist_grip / n,
             "reward_dist_goal": -self._ep_dist_goal / (n * self.max_dist),
+            "reward_fine_bonus": 0.25 * self._ep_fine_bonus / n,
             "TimeLimit.truncated": truncated_bool,
         }
 
@@ -214,27 +207,16 @@ class IsaacLabShapedFetchWrapper(gym.Env):
 
 
 def main():
-    log_root = Path("logs/sb3") / args_cli.log_name
-    checkpoint_dir = log_root / "checkpoints"
-    tb_dir = log_root / "tensorboard"
+    run_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_root = Path("logs/sb3") / cfg.log_name / run_name
 
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    tb_dir.mkdir(parents=True, exist_ok=True)
+    log_root.mkdir(parents=True, exist_ok=True)
 
-    env_cfg = parse_env_cfg(
-        args_cli.task,
-        device=args_cli.device,
-        num_envs=1,
-    )
-    env_cfg.seed = args_cli.seed
+    env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=1)
+    env_cfg.seed = cfg.seed
 
     isaac_env = gym.make(args_cli.task, cfg=env_cfg)
-    env = IsaacLabShapedFetchWrapper(
-        isaac_env,
-        max_dist=args_cli.max_dist,
-        success_threshold=args_cli.success_threshold,
-    )
-
+    env = IsaacLabShapedFetchWrapper(isaac_env, cfg)
     env = Monitor(
         env,
         filename=str(log_root / "monitor.csv"),
@@ -244,21 +226,22 @@ def main():
             "gripper_object_distance",
             "reward_dist_grip",
             "reward_dist_goal",
+            "reward_fine_bonus",
         ),
     )
 
     n_actions = env.action_space.shape[-1]
     action_noise = NormalActionNoise(
         mean=np.zeros(n_actions),
-        sigma=0.1 * np.ones(n_actions),
+        sigma=cfg.action_noise_sigma * np.ones(n_actions),
     )
 
     callbacks = CallbackList(
         [
             CheckpointCallback(
-                save_freq=args_cli.checkpoint_freq,
-                save_path=str(checkpoint_dir),
-                name_prefix="sac_shaped_model",
+                save_freq=cfg.checkpoint_freq,
+                save_path=str(log_root),
+                name_prefix="model",
                 save_replay_buffer=True,
                 save_vecnormalize=True,
             ),
@@ -270,7 +253,7 @@ def main():
         model = SAC.load(
             args_cli.resume,
             env=env,
-            tensorboard_log=str(tb_dir),
+            tensorboard_log=str(log_root),
             device=args_cli.device,
         )
         model.action_noise = action_noise
@@ -288,40 +271,39 @@ def main():
         model = SAC(
             policy="MultiInputPolicy",
             env=env,
-            buffer_size=1_000_000,
-            batch_size=1024,
-            gamma=0.97,
-            tau=0.05,
-            learning_rate=5e-4,
-            learning_starts=30_000,
+            buffer_size=cfg.buffer_size,
+            batch_size=cfg.batch_size,
+            gamma=cfg.gamma,
+            tau=cfg.tau,
+            learning_rate=cfg.learning_rate,
+            learning_starts=cfg.learning_starts,
+            target_entropy=cfg.target_entropy,
             action_noise=action_noise,
             policy_kwargs={
-                "net_arch": [512, 512, 512],
-                "n_critics": 2,
+                "net_arch": cfg.net_arch,
+                "n_critics": cfg.n_critics,
             },
             verbose=1,
-            tensorboard_log=str(tb_dir),
-            seed=args_cli.seed,
+            tensorboard_log=str(log_root),
+            seed=cfg.seed,
             device=args_cli.device,
         )
         reset_num_timesteps = True
 
     try:
         model.learn(
-            total_timesteps=args_cli.total_timesteps,
+            total_timesteps=cfg.total_timesteps,
             callback=callbacks,
             reset_num_timesteps=reset_num_timesteps,
             progress_bar=True,
             tb_log_name="SAC_shaped_no_HER",
         )
-
     except KeyboardInterrupt:
         print("Training interrupted. Saving current model.")
 
-    final_path = log_root / "final_sac_shaped_no_her"
+    final_path = log_root / "model_final"
     model.save(str(final_path))
-    model.save_replay_buffer(str(log_root / "final_sac_shaped_no_her_replay_buffer.pkl"))
-
+    model.save_replay_buffer(str(log_root / "model_final_replay_buffer.pkl"))
     print(f"Saved final model to: {final_path}.zip")
 
     env.close()

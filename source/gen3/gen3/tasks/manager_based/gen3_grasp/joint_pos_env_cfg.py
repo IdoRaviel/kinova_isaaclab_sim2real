@@ -65,7 +65,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.commands.object_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.35, 0.65),
             pos_y=(-0.2, 0.2),
-            pos_z=(0.30, 0.65),
+            pos_z=(0.15, 0.45),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -178,3 +178,31 @@ class Gen3GraspEnvCfg_PLAY(Gen3GraspEnvCfg):
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
+
+
+@configclass
+class Gen3GraspEnvCfgSAC(Gen3GraspEnvCfg):
+    """SAC variant: inherits all world setup from Gen3GraspEnvCfg, overrides rewards only.
+
+    Reward per step (scaled by dt):  r = -tanh(d_grip/0.1) - d_goal/0.55
+    Both terms in [0, 1], total in [-2, 0].
+
+    Curriculum num_steps and observation corruption are set by the SKRL training
+    script (they depend on num_envs / training mode).
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # --- SAC reward shaping ---
+        self.rewards.ee_to_cube = RewTerm(
+            func=mdp.ee_to_cube_distance,
+            params={"std": 0.1},
+            weight=-1.0,
+        )
+        self.rewards.cube_to_target = RewTerm(
+            func=mdp.cube_to_target_distance_l2,
+            params={"command_name": "object_pose"},
+            weight=-1.0 / 0.55,
+        )
+        self.rewards.cube_to_target_fine = None
