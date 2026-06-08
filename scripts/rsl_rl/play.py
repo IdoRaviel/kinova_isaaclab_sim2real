@@ -131,13 +131,27 @@ def main():
             obs, _, _, _ = env.step(actions)
 
         if timestep % 50 == 0:
+            # Task-agnostic progress readout. Reach and grasp expose different command
+            # terms, so the metric is selected by the active command name — this lets a
+            # single play.py report a meaningful goal distance for either task. Commands
+            # are in the robot-root frame and converted to world before comparing.
             from isaaclab.utils.math import combine_frame_transforms
-            obj = env.unwrapped.scene["object"]
             robot = env.unwrapped.scene["robot"]
-            cmd = env.unwrapped.command_manager.get_command("object_pose")
-            target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, cmd[:, :3])
-            dist = (obj.data.root_pos_w - target_w).norm(dim=1).mean()
-            print(f"[step {timestep}] dist_goal: {dist:.3f} m")
+            cmd_mgr = env.unwrapped.command_manager
+            if "object_pose" in cmd_mgr.active_terms:
+                # Grasp task: distance from the cube to its commanded goal pose.
+                obj = env.unwrapped.scene["object"]
+                cmd = cmd_mgr.get_command("object_pose")
+                target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, cmd[:, :3])
+                dist = (obj.data.root_pos_w - target_w).norm(dim=1).mean()
+                print(f"[step {timestep}] dist_goal: {dist:.3f} m")
+            elif "ee_pose" in cmd_mgr.active_terms:
+                # Reach task: distance from the end-effector body to its commanded goal pose.
+                cmd = cmd_mgr.get_command("ee_pose")
+                target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, cmd[:, :3])
+                ee_idx = robot.body_names.index("end_effector_link")
+                dist = (robot.data.body_pos_w[:, ee_idx] - target_w).norm(dim=1).mean()
+                print(f"[step {timestep}] dist_goal: {dist:.3f} m")
 
         if args_cli.video:
             timestep += 1
