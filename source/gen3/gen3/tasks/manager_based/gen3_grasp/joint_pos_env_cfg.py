@@ -1,3 +1,5 @@
+import math
+
 from isaaclab.assets import RigidObjectCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.sensors import FrameTransformerCfg
@@ -7,6 +9,7 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
+from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 
@@ -27,6 +30,11 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
+
+        # --- Sim ----
+        self.decimation = 2
+        self.sim.render_interval = self.decimation
+        self.sim.dt = 1.0 / 60.0
 
         # --- Robot ---
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
@@ -63,9 +71,9 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.commands.object_pose.body_name = "end_effector_link"
         self.commands.object_pose.debug_vis = True
         self.commands.object_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.35, 0.65),
-            pos_y=(-0.2, 0.2),
-            pos_z=(0.15, 0.45),
+            pos_x=(0.40, 0.55),
+            pos_y=(-0.15, 0.15),
+            pos_z=(0.08, 0.20),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -106,11 +114,25 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
 
         # --- Rewards ---
         self.rewards.reaching_object = None
-        self.rewards.lifting_object = None
         self.rewards.object_goal_tracking = None
         self.rewards.object_goal_tracking_fine_grained = None
 
-        # Penalty: keep EE near cube (don't drift away)
+        # Lifting hard reward: +1/step whenever the cube is off the table.
+        self.rewards.lifting_object = RewTerm(
+            func=mdp.object_is_lifted,
+            params={
+                "minimal_height": 0.08
+            },  # cube rests at 0.055 -> triggers once lifted ~2.5cm
+            weight=1.0,
+        )
+
+        # Coarse pull: L2 distance from EE to cube (constant, non-saturating gradient).
+        # Dense "get to / stay on the cube" signal that counters the drift toward canonical.
+        self.rewards.ee_to_cube_l2 = RewTerm(
+            func=mdp.ee_to_cube_distance_l2,
+            weight=-1.0,
+        )
+        # Fine-grained: tanh, sharp signal right at the cube (fine-tune)
         self.rewards.ee_to_cube = RewTerm(
             func=mdp.ee_to_cube_distance,
             params={"std": 0.1},
@@ -121,13 +143,13 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.rewards.cube_to_target = RewTerm(
             func=mdp.cube_to_target_distance_l2,
             params={"command_name": "object_pose"},
-            weight=-1.0,
+            weight=-2.0,
         )
         # Fine-grained bonus: sharp positive reward when cube is near target
         self.rewards.cube_to_target_fine = RewTerm(
             func=mdp.cube_to_target_distance_tanh,
             params={"std": 0.1, "command_name": "object_pose"},
-            weight=+0.25,
+            weight=+0.50,
         )
 
         # Action/joint penalties: start at zero, ramp very slowly
@@ -144,12 +166,23 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.curriculum.joint_vel.params["weight"] = -5e-4
         self.curriculum.joint_vel.params["num_steps"] = _curriculum_steps
 
-        # --- Object reset: small random range near default spawn ---
-        self.events.reset_object_position.params["pose_range"] = {
-            "x": (-0.01, 0.01),
-            "y": (-0.01, 0.01),
-            "z": (0.0, 0.0),
-        }
+        # --- Reset: random cube pose + IK so the gripper starts top-down above the cube
+        # with a varied joint configuration (robustness for the reach->grasp handoff).
+        # Replaces the default random object reset (this event sets cube + arm together).
+        self.events.reset_object_position = None
+        self.events.reset_above_cube_ik = EventTerm(
+            func=mdp.reset_above_cube_ik,
+            mode="reset",
+            params={
+                "cube_x": (0.35, 0.55),
+                "cube_y": (-0.30, 0.30),
+                "cube_z": 0.055,
+                "yaw_range": (-math.pi, math.pi),
+                "hover": 0.12,
+                "jitter_deg": 15.0,
+                "num_seeds": 8,
+            },
+        )
 
         # --- EE frame: offset from wrist flange to approximate finger center ---
         marker_cfg = SPHERE_MARKER_CFG.copy()
