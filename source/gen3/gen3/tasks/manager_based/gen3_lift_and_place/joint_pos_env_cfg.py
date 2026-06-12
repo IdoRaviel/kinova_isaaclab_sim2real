@@ -8,6 +8,8 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 
 from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
@@ -25,6 +27,11 @@ from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
 class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
+
+        # --- Sim ----
+        self.decimation = 2
+        self.sim.render_interval = self.decimation
+        self.sim.dt = 1.0 / 60.0
 
         # --- Robot: use USD default joint positions ---
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
@@ -92,8 +99,8 @@ class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
 
         # --- Object reset: random on table surface ---
         self.events.reset_object_position.params["pose_range"] = {
-            "x": (-0.10, 0.14),
-            "y": (-0.2, 0.2),
+            "x": (-0.05, 0.05),
+            "y": (-0.05, 0.05),
             "z": (0.0, 0.0),
             "yaw": (-math.pi, math.pi),
         }
@@ -124,4 +131,105 @@ class Gen3LiftAndPlaceEnvCfg_PLAY(Gen3LiftAndPlaceEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
+        self.observations.policy.enable_corruption = False
+
+
+##
+# Policy-chaining (inference-only) env
+##
+
+
+@configclass
+class _ReachPolicyObsCfg(ObsGroup):
+    """Observation layout the frozen reach_with_orientation policy was trained on.
+
+    Term order must match the reach policy's training env exactly:
+    joint_pos, joint_vel, ee_pose command, last (arm) action.
+    """
+
+    joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+    joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+    pose_command = ObsTerm(
+        func=mdp.generated_commands, params={"command_name": "ee_pose"}
+    )
+    # reach was trained arm-only (7 dims) -> slice last_action to arm_action
+    actions = ObsTerm(func=mdp.last_action, params={"action_name": "arm_action"})
+
+    def __post_init__(self):
+        self.enable_corruption = False
+        self.concatenate_terms = True
+
+
+@configclass
+class Gen3LiftAndPlaceChainEnvCfg(Gen3LiftAndPlaceEnvCfg):
+    """Inference env that chains the two frozen pretrained policies.
+
+    Flow (driven by the play script): reach -> pause -> grasp.
+      * The arm starts like the reach task (USD default pose + a small random joint
+        offset), so the reach policy has real work to do (it is NOT pre-placed above
+        the cube).
+      * The cube spawns randomly on the table, in the intersection of grasp's cube
+        range and reach's trained workspace (x in [0.35, 0.55], y in [-0.2, 0.2]).
+      * ``ee_pose`` command -> phase-1 target for the reach policy; never auto-resamples
+        within an episode (the play script overwrites ``pose_command_b`` each reset to
+        sit above the cube, aligned to its yaw).
+      * ``reach`` obs group -> matches the reach policy's training layout (the inherited
+        ``policy`` group already matches grasp).
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # --- Arm start: like the reach task — USD default pose + small random joint
+        # offset, so the reach policy has real work to do. Set position_range to
+        # (0.0, 0.0) for a fixed default start.
+        self.events.reset_robot_joints = EventTerm(
+            func=mdp.reset_joints_by_offset,
+            mode="reset",
+            params={"position_range": (-0.4, 0.4), "velocity_range": (0.0, 0.0)},
+        )
+
+        # --- Cube: random on the table. Range is grasp's cube range clipped to reach's
+        # trained workspace (reach was trained on y in [-0.2, 0.2], grasp on [-0.3, 0.3]).
+        self.scene.object.init_state.pos = [0.45, 0.0, 0.055]
+        self.events.reset_object_position.params["pose_range"] = {
+            "x": (-0.10, 0.10),   # -> x in [0.35, 0.55]
+            "y": (-0.20, 0.20),   # -> y in [-0.20, 0.20]
+            "z": (0.0, 0.0),
+            "yaw": (-math.pi, math.pi),
+        }
+
+        # --- Place target (object_pose): the range the grasp policy was trained on.
+        self.commands.object_pose.ranges = mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.35, 0.65),
+            pos_y=(-0.2, 0.2),
+            pos_z=(0.15, 0.45),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        )
+        # Never auto-resample within an episode: the play script overwrites the place
+        # target (a 2 cm in-place lift) once grasp takes over.
+        self.commands.object_pose.resampling_time_range = (1.0e9, 1.0e9)
+
+        # --- Phase-1 reach target (ee_pose). Huge resampling interval -> stays fixed
+        # within an episode; the play script writes pose_command_b above the cube after
+        # every reset.
+        self.commands.ee_pose = mdp.UniformPoseCommandCfg(
+            asset_name="robot",
+            body_name="end_effector_link",
+            resampling_time_range=(1.0e9, 1.0e9),
+            debug_vis=True,
+            ranges=mdp.UniformPoseCommandCfg.Ranges(
+                pos_x=(0.43, 0.43),
+                pos_y=(0.0, 0.0),
+                pos_z=(0.30, 0.30),
+                roll=(0.0, 0.0),
+                pitch=(math.pi, math.pi),
+                yaw=(0.0, 0.0),
+            ),
+        )
+
+        # Second obs group for the reach policy; corruption off for inference.
+        self.observations.reach = _ReachPolicyObsCfg()
         self.observations.policy.enable_corruption = False
