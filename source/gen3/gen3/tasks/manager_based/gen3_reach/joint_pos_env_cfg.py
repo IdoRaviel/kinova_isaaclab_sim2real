@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 
@@ -41,18 +42,49 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot"
         )
-        # override events — use offset reset so joint_7=0 still gets randomized
+        # override events — use offset reset so joint_7=0 still gets randomized.
+        # Scoped to the ARM joints so it doesn't also jiggle the finger (gripper is handled below).
         self.events.reset_robot_joints = EventTerm(
             func=mdp.reset_joints_by_offset,
             mode="reset",
-            params={"position_range": (-0.4, 0.4), "velocity_range": (0.0, 0.0)},
+            params={
+                "position_range": (-0.4, 0.4),
+                "velocity_range": (0.0, 0.0),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["joint_[1-7]"]),
+            },
+        )
+        # Gripper state: random open(0) -> closed(0.7) each reset, so the finger-joint
+        # observation covers the carry case (gripper closed), not just open-ish.
+        self.events.reset_gripper_state = EventTerm(
+            func=mdp.reset_joints_held_uniform,
+            mode="reset",
+            params={
+                "position_range": (0.0, 0.7),
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["finger_joint"]),
+            },
+        )
+        # Payload randomization: ADD a random mass on top of the gripper's own mass each reset,
+        # so the policy reaches accurately whether empty or carrying the cube (chain's 2nd reach).
+        # operation="add" -> robotiq_base_link's 0.289 kg stays; we add 0 (empty) .. 0.3 kg on top.
+        # Cube measured at 0.216 kg, so it sits inside the trained span. (end_effector_link is
+        # massless, hence robotiq_base_link.) Policy doesn't observe mass -> load-robust controller.
+        self.events.randomize_gripper_payload = EventTerm(
+            func=mdp.randomize_rigid_body_mass,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", body_names=["robotiq_base_link"]),
+                "mass_distribution_params": (0.0, 0.3),
+                "operation": "add",
+                "distribution": "uniform",
+                "recompute_inertia": True,
+            },
         )
         # override rewards — track the fingertip grasp point (ee_frame), not the
         # wrist flange. Custom ee_frame-based functions measure fingertip position;
         # orientation is identical at the fingertip but uses the ee_frame variant too.
         self.rewards.end_effector_position_tracking = RewTerm(
             func=mdp.ee_position_command_error,
-            weight=-0.45,
+            weight=-0.6,
             params={
                 "command_name": "ee_pose",
                 "ee_frame_cfg": SceneEntityCfg("ee_frame"),
@@ -60,16 +92,17 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         )
         self.rewards.end_effector_position_tracking_fine_grained = RewTerm(
             func=mdp.ee_position_command_error_tanh,
-            weight=0.25,
+            weight=0.6,
             params={
                 "command_name": "ee_pose",
-                "std": 0.15,  # tanh width (m): fine-grained position bonus, grows as the fingertip nears the target
+                "std": 0.07,  # tanh width (m): fine-grained position bonus, grows as the fingertip nears the target
                 "ee_frame_cfg": SceneEntityCfg("ee_frame"),
             },
         )
+
         self.rewards.end_effector_orientation_tracking = RewTerm(
             func=mdp.ee_orientation_command_error,
-            weight=-0.2,  # coarse orientation-error penalty (shortest-path angle)
+            weight=-0.3,  # coarse orientation-error penalty (shortest-path angle)
             params={
                 "command_name": "ee_pose",
                 "ee_frame_cfg": SceneEntityCfg("ee_frame"),
@@ -97,22 +130,52 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
         #   pitch=pi   -> approach points straight DOWN (top-down grasp)
         #   pitch=pi/2 -> approach points FORWARD (horizontal)
         #   yaw        -> swings the approach direction left/right (to the sides)
-        # Ranges span forward (pitch=pi/2) to straight-down (pitch=pi) with +/-90deg yaw,
-        # covering top-down grasp poses and angled place poses.
-        self.commands.ee_pose.ranges.pitch = (math.pi / 2, math.pi)
-        self.commands.ee_pose.ranges.yaw = (-math.pi / 2, math.pi / 2)
+        # Orientation ranges (base-frame RPY; verified against quat_from_euler_xyz):
+        #   pitch (base Y) -> tilts the approach (blue) forward<->back: pi=straight DOWN, pi/2=FORWARD.
+        #                     keep the DOWN end at pi (the chain's first reach needs exact top-down).
+        #   yaw   (base Z) -> WRIST TWIST: spins the gripper about the (downward) approach axis.
+        #   roll  (base X) -> tilts the approach SIDEWAYS (left/right lean).
+        self.commands.ee_pose.ranges.roll = (
+            -math.pi / 18,
+            math.pi / 18,
+        )  # +/-10 deg: a small sideways approach tilt (reduced)
+        self.commands.ee_pose.ranges.pitch = (
+            math.pi / 2 + math.pi / 6,
+            math.pi,
+        )  # 120 deg (less forward) .. straight DOWN (pi kept); forward tilt reduced
+        self.commands.ee_pose.ranges.yaw = (
+            -math.pi / 4,
+            math.pi / 4,
+        )  # +/-45 deg twist: covers all 4 faces of the square cube
         # target height range (m): floor at 0.05 reaches table / cube-grasp height (cube sits at z≈0.055)
         self.commands.ee_pose.ranges.pos_z = (0.05, 0.50)
-        # Smoothness penalties (action-rate and joint-velocity) that suppress wavering.
-        # They activate at 50% of training so the policy first learns to reach and orient,
-        # then to hold still; num_steps scales with the run length.
-        _curriculum_steps = int(
-            _RunnerCfg().max_iterations * _RunnerCfg().num_steps_per_env * 0.5
+        # Smoothness penalties: OFF for the first 25% (learn to reach freely), then ramp
+        # LINEARLY up to max between 25% and 60% (ease in, no shock), max for the rest.
+        self.rewards.action_rate.weight = 0.0
+        _total = _RunnerCfg().max_iterations * _RunnerCfg().num_steps_per_env
+        _start, _end = int(_total * 0.25), int(_total * 0.6)
+        self.curriculum.action_rate = CurrTerm(
+            func=mdp.modify_reward_weight_ramp,
+            params={
+                "term_name": "action_rate",
+                "start_weight": 0.0,
+                "end_weight": -0.005,
+                "start_step": _start,
+                "end_step": _end,
+            },
         )
-        self.curriculum.action_rate.params["weight"] = -0.01
-        self.curriculum.action_rate.params["num_steps"] = _curriculum_steps
-        self.curriculum.joint_vel.params["weight"] = -0.003
-        self.curriculum.joint_vel.params["num_steps"] = _curriculum_steps
+        # joint velocity: global penalty, ramped 0 -> max over 25%-60% (matches action_rate).
+        self.rewards.joint_vel.weight = 0.0
+        self.curriculum.joint_vel = CurrTerm(
+            func=mdp.modify_reward_weight_ramp,
+            params={
+                "term_name": "joint_vel",
+                "start_weight": 0.0,
+                "end_weight": -0.0015,
+                "start_step": _start,
+                "end_step": _end,
+            },
+        )
         # Target pose: frame arrows (RGB axes) — goal position + orientation.
         goal_marker_cfg = FRAME_MARKER_CFG.copy()
         goal_marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
