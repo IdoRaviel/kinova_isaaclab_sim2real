@@ -227,6 +227,7 @@ def reset_above_cube_ik(
     tool_offset: float = 0.21,
     jitter_deg: float = 15.0,
     num_seeds: int = 4,
+    cube_jitter: float = 0.0,   # max lateral cube offset (m) from directly-below the gripper
 ):
     """Reset event: cube at a random pose + arm IK-placed top-down above it (varied configs).
 
@@ -262,6 +263,10 @@ def reset_above_cube_ik(
 
     # --- write cube pose (world frame = env origin + local) ---
     cube_pos = env.scene.env_origins[env_ids] + cube_local[:, :3]
+    # nudge the cube laterally so it's NOT exactly under the gripper -> the policy must
+    # localize and adjust each episode (robustness for the reach->grasp handoff).
+    if cube_jitter > 0.0:
+        cube_pos[:, :2] += (torch.rand(n, 2, device=device) - 0.5) * 2.0 * cube_jitter
     obj.write_root_pose_to_sim(
         torch.cat([cube_pos, cube_local[:, 3:7]], dim=1), env_ids=env_ids
     )

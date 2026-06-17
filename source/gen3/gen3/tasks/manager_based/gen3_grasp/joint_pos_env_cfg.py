@@ -121,7 +121,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.rewards.lifting_object = RewTerm(
             func=mdp.object_is_lifted,
             params={
-                "minimal_height": 0.08
+                "minimal_height": 0.05
             },  # cube rests at 0.055 -> triggers once lifted ~2.5cm
             weight=1.0,
         )
@@ -143,13 +143,13 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.rewards.cube_to_target = RewTerm(
             func=mdp.cube_to_target_distance_l2,
             params={"command_name": "object_pose"},
-            weight=-2.0,
+            weight=-1.0,
         )
         # Fine-grained bonus: sharp positive reward when cube is near target
         self.rewards.cube_to_target_fine = RewTerm(
             func=mdp.cube_to_target_distance_tanh,
             params={"std": 0.1, "command_name": "object_pose"},
-            weight=+0.50,
+            weight=+1.0,
         )
 
         # Action/joint penalties: start at zero, ramp very slowly
@@ -161,7 +161,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         _runner = _RunnerCfg()
         _total_steps = _runner.max_iterations * _runner.num_steps_per_env
         _curriculum_steps = int(_total_steps * 0.7)
-        self.curriculum.action_rate.params["weight"] = -5e-4
+        self.curriculum.action_rate.params["weight"] = -1e-3
         self.curriculum.action_rate.params["num_steps"] = _curriculum_steps
         self.curriculum.joint_vel.params["weight"] = -5e-4
         self.curriculum.joint_vel.params["num_steps"] = _curriculum_steps
@@ -181,6 +181,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
                 "hover": 0.12,
                 "jitter_deg": 15.0,
                 "num_seeds": 8,
+                "cube_jitter": 0.04,  # ±4 cm lateral offset from directly-below
             },
         )
 

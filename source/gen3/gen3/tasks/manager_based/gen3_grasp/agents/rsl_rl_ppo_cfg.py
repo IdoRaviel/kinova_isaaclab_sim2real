@@ -10,7 +10,7 @@ from isaaclab_rl.rsl_rl import (
 @configclass
 class Gen3GraspPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 30
-    max_iterations = 1000
+    max_iterations = 1300
     save_interval = 50
     experiment_name = "grasp_gen3"
     run_name = ""
