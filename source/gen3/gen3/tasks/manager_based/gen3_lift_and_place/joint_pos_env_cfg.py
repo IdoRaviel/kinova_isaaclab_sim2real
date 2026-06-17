@@ -180,6 +180,11 @@ class Gen3LiftAndPlaceChainEnvCfg(Gen3LiftAndPlaceEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
+        # --- Episode length: the chain runs reach -> pause -> grasp -> pause -> carry in
+        # sequence, so it needs more than the 5 s single-task default (else it ends
+        # mid-chain). Frozen policies don't observe time, so a longer episode is safe.
+        self.episode_length_s = 10.0
+
         # --- Arm start: like the reach task — USD default pose + small random joint
         # offset, so the reach policy has real work to do. Set position_range to
         # (0.0, 0.0) for a fixed default start.
@@ -229,6 +234,11 @@ class Gen3LiftAndPlaceChainEnvCfg(Gen3LiftAndPlaceEnvCfg):
                 yaw=(0.0, 0.0),
             ),
         )
+
+        # Target markers are drawn by the play script (phase-colored), so disable the
+        # commands' built-in debug markers to avoid duplicate spheres.
+        self.commands.object_pose.debug_vis = False
+        self.commands.ee_pose.debug_vis = False
 
         # Second obs group for the reach policy; corruption off for inference.
         self.observations.reach = _ReachPolicyObsCfg()

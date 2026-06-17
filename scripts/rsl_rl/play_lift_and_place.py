@@ -50,6 +50,9 @@ import yaml
 
 from rsl_rl.runners import OnPolicyRunner
 
+import isaaclab.sim as sim_utils
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.math import (
     combine_frame_transforms,
@@ -74,8 +77,6 @@ PHASE_NAME = {REACH: "reach", PAUSE1: "pause1", GRASP: "grasp", PAUSE2: "pause2"
 # action >= 0 -> open, action < 0 -> close.
 GRIPPER_OPEN = 1.0
 HALF_PI = math.pi / 2.0
-# Cube within this (m) of grasp_lift_z counts as "lifted" -> advance past the grasp phase.
-LIFT_TOL = 0.005
 
 
 class _ActionDimProxy:
@@ -137,11 +138,34 @@ def main():
     ee_cmd = env.unwrapped.command_manager.get_term("ee_pose")      # reach target (phases REACH/CARRY)
     obj_cmd = env.unwrapped.command_manager.get_term("object_pose")  # grasp place target (phases GRASP/PAUSE2)
 
+    # --- phase-colored target marker: one sphere at the active phase's target ---
+    def _sphere(color):
+        return sim_utils.SphereCfg(
+            radius=0.02, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color)
+        )
+    target_vis = VisualizationMarkers(VisualizationMarkersCfg(
+        prim_path="/Visuals/Command/active_target",
+        markers={
+            "black": _sphere((0.0, 0.0, 0.0)),   # first reach (above the cube)
+            "green": _sphere((0.0, 1.0, 0.0)),   # grasp / lift target
+            "purple": _sphere((0.5, 0.0, 0.5)),  # second reach (carry, in the air)
+        },
+    ))
+    # second-reach (carry) target also shows orientation axes (sphere + arrows)
+    axes_cfg = FRAME_MARKER_CFG.copy()
+    axes_cfg.prim_path = "/Visuals/Command/reach2_axes"
+    axes_cfg.markers["frame"].scale = (0.15, 0.15, 0.15)
+    reach2_axes_vis = VisualizationMarkers(axes_cfg)
+
     # --- per-env state ---
     phase = torch.full((num_envs,), REACH, dtype=torch.long, device=device)
     reach_steps = torch.zeros(num_envs, device=device)                    # steps spent in REACH (for timeout)
     pause_left = torch.zeros(num_envs, dtype=torch.long, device=device)   # countdown for the current pause
     held_grip = torch.full((num_envs, 1), GRIPPER_OPEN, device=device)    # gripper cmd replayed during CARRY
+    # reach-handoff bookkeeping (hybrid switch): fingertip speed + plateau detection
+    prev_ee_w = ee_frame.data.target_pos_w[:, 0, :].clone()               # prev fingertip pos (for speed)
+    best_dist = torch.full((num_envs,), float("inf"), device=device)      # running-min reach dist (plateau)
+    plateau_count = torch.zeros(num_envs, device=device)                  # steps since dist last improved
 
     # pause durations (s) -> control steps
     step_dt = getattr(env.unwrapped, "step_dt", None) or (env.unwrapped.physics_dt * env.unwrapped.cfg.decimation)
@@ -180,8 +204,11 @@ def main():
         ax = CFG.air_x[0] + (CFG.air_x[1] - CFG.air_x[0]) * torch.rand(n, device=device)
         ay = CFG.air_y[0] + (CFG.air_y[1] - CFG.air_y[0]) * torch.rand(n, device=device)
         az = CFG.air_z[0] + (CFG.air_z[1] - CFG.air_z[0]) * torch.rand(n, device=device)
-        quat = quat_from_euler_xyz(torch.zeros(n, device=device), torch.full((n,), math.pi, device=device),
-                                   torch.zeros(n, device=device))  # top-down: keep the cube under the gripper
+        # sampled orientation around top-down (yaw varies freely; roll/pitch small tilt)
+        roll = CFG.air_roll[0] + (CFG.air_roll[1] - CFG.air_roll[0]) * torch.rand(n, device=device)
+        pitch = CFG.air_pitch[0] + (CFG.air_pitch[1] - CFG.air_pitch[0]) * torch.rand(n, device=device)
+        yaw = CFG.air_yaw[0] + (CFG.air_yaw[1] - CFG.air_yaw[0]) * torch.rand(n, device=device)
+        quat = quat_from_euler_xyz(roll, pitch, yaw)
         if ee_cmd.cfg.make_quat_unique:
             quat = quat_unique(quat)
         ee_cmd.pose_command_b[ids, 0] = ax
@@ -220,10 +247,42 @@ def main():
             obs, _, dones, _ = env.step(action)
 
         # --- signals used by the state machine ---
-        target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
-                                                ee_cmd.pose_command_b[:, :3])
-        dist = torch.norm(ee_frame.data.target_pos_w[:, 0, :] - target_w, dim=-1)  # fingertip -> reach target
+        target_w, target_quat_w = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
+                                                            ee_cmd.pose_command_b[:, :3],
+                                                            ee_cmd.pose_command_b[:, 3:7])
+        ee_now_w = ee_frame.data.target_pos_w[:, 0, :]
+        dist = torch.norm(ee_now_w - target_w, dim=-1)                              # fingertip -> reach target
+        ee_speed = torch.norm(ee_now_w - prev_ee_w, dim=-1) / step_dt              # fingertip speed (m/s)
+        prev_ee_w = ee_now_w.clone()
         cube_z = obj.data.root_pos_w[:, 2]                                          # cube height
+
+        # plateau tracking (REACH only): count steps since the reach distance last improved
+        in_reach = phase == REACH
+        improved = in_reach & (dist < best_dist - CFG.handoff_plateau_eps)
+        best_dist = torch.where(improved, dist, best_dist)
+        plateau_count = torch.where(improved, torch.zeros_like(plateau_count), plateau_count)
+        plateau_count = torch.where(in_reach & ~improved, plateau_count + 1.0, plateau_count)
+
+        # --- draw the active phase's target as a colored sphere ---
+        grasp_target_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
+                                                      obj_cmd.pose_command_b[:, :3])
+        use_grasp_vis = (phase == GRASP) | (phase == PAUSE2)
+        active_pos = torch.where(use_grasp_vis.unsqueeze(-1), grasp_target_w, target_w)
+        midx = torch.zeros(num_envs, dtype=torch.long, device=device)  # black (reach/pause1)
+        midx[use_grasp_vis] = 1                                         # green (grasp/pause2)
+        midx[phase == CARRY] = 2                                        # purple (carry)
+        target_vis.visualize(translations=active_pos, marker_indices=midx)
+
+        # carry target: also draw orientation axes (arrows) at the (purple) sphere.
+        # Always pass all envs (constant count, instancer stays visible) and gate by scale:
+        # scale 0 hides non-carry envs. NOTE: set_visibility(False) makes visualize() a no-op
+        # (it returns early when the instancer is hidden), so the arrows could never reappear.
+        axes_scale = torch.zeros(num_envs, 3, device=device)
+        axes_scale[phase == CARRY] = 1.0
+        reach2_axes_vis.visualize(
+            translations=target_w, orientations=target_quat_w, scales=axes_scale,
+            marker_indices=torch.zeros(num_envs, dtype=torch.long, device=device),
+        )
 
         # --- state machine (transitions evaluated latest-phase-first to avoid skipping a phase) ---
         if not CFG.reach_only:
@@ -237,8 +296,9 @@ def main():
                 set_air_target(ids)
             phase = torch.where(done_pause2, torch.full_like(phase, CARRY), phase)
 
-            # GRASP -> PAUSE2: the cube has been lifted to the target height
-            lifted = (phase == GRASP) & (cube_z >= CFG.grasp_lift_z - LIFT_TOL)
+            # GRASP -> PAUSE2: the cube has reached the lift target (within a band, both sides).
+            # No timeout: a grasp that never lifts just keeps trying until the episode ends.
+            lifted = (phase == GRASP) & ((cube_z - CFG.grasp_lift_z).abs() <= CFG.grasp_lift_tol)
             phase = torch.where(lifted, torch.full_like(phase, PAUSE2), phase)
             pause_left = torch.where(lifted, torch.full_like(pause_left, pause2_steps), pause_left)
 
@@ -252,9 +312,13 @@ def main():
             pause_left = torch.where(in_pause1, pause_left - 1, pause_left)
             phase = torch.where(in_pause1 & (pause_left <= 0), torch.full_like(phase, GRASP), phase)
 
-            # REACH -> PAUSE1: fingertip is above the cube (or reach timed out)
+            # REACH -> PAUSE1: hybrid handoff (whichever fires first):
+            #   (a) close AND settled, (b) converged/plateaued and reasonably close, (c) hard timeout.
             reach_steps += (phase == REACH).float()
-            done_reach = (phase == REACH) & ((dist < CFG.handoff_dist) | (reach_steps > CFG.reach_timeout))
+            settled = (dist < CFG.handoff_dist) & (ee_speed < CFG.handoff_speed)
+            plateaued = (plateau_count >= CFG.handoff_plateau_steps) & (dist < CFG.handoff_accept_dist)
+            timed_out = reach_steps > CFG.reach_timeout
+            done_reach = (phase == REACH) & (settled | plateaued | timed_out)
             phase = torch.where(done_reach, torch.full_like(phase, PAUSE1), phase)
             pause_left = torch.where(done_reach, torch.full_like(pause_left, pause1_steps), pause_left)
 
@@ -265,14 +329,17 @@ def main():
             reach_steps[done_ids] = 0.0
             pause_left[done_ids] = 0
             held_grip[done_ids] = GRIPPER_OPEN
+            best_dist[done_ids] = float("inf")
+            plateau_count[done_ids] = 0.0
+            prev_ee_w[done_ids] = ee_frame.data.target_pos_w[done_ids, 0, :]  # avoid a spurious speed spike
             set_above_cube_target(done_ids)
 
         if timestep % 50 == 0:
             cube_b, _ = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
                                                   obj.data.root_pos_w)
             ph = "reach" if CFG.reach_only else PHASE_NAME[int(phase[0])]
-            print(f"[t {timestep}] env0 phase={ph} dist={dist[0]:.3f}m cube_z={cube_z[0]:.3f} "
-                  f"cube_b=({cube_b[0, 0]:.2f},{cube_b[0, 1]:.2f},{cube_b[0, 2]:.2f})")
+            print(f"[t {timestep}] env0 phase={ph} dist={dist[0]:.3f}m ee_speed={ee_speed[0]:.3f} "
+                  f"cube_z={cube_z[0]:.3f} cube_b=({cube_b[0, 0]:.2f},{cube_b[0, 1]:.2f},{cube_b[0, 2]:.2f})")
         timestep += 1
 
         # real-time pacing
