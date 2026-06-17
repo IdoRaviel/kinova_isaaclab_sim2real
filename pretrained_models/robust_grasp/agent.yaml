@@ -1,7 +1,7 @@
 seed: 42
 device: cuda:0
 num_steps_per_env: 30
-max_iterations: 1000
+max_iterations: 1300
 empirical_normalization: {}
 obs_groups:
   actor:
