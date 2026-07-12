@@ -13,11 +13,6 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-# =============================================================================
-# PPO rewards — wired into RewardManager via joint_pos_env_cfg.py RewTerms.
-# =============================================================================
-
-
 def ee_to_cube_distance(
     env: ManagerBasedRLEnv,
     std: float = 0.1,
@@ -51,7 +46,7 @@ def cube_to_target_distance_l2(
     Command is in robot-root frame; we transform it to world before comparing
     to the cube's world position so multi-env spacing doesn't break the metric.
     Constant gradient at all ranges — the coarse "pull" toward the target.
-    Use with a negative weight.  [PPO penalty + SAC d_goal component]
+    Use with a negative weight.
     """
     robot: RigidObject = env.scene[robot_cfg.name]
     object: RigidObject = env.scene[object_cfg.name]
@@ -87,23 +82,16 @@ def cube_to_target_distance_tanh(
     return 1 - torch.tanh(distance / std)
 
 
-# =============================================================================
-# SAC rewards — called directly from the SB3 wrapper (not through RewardManager).
-# These return raw (unscaled) distances so the wrapper can form the combined
-# shaped reward:  r = -(dist_grip + dist_goal) / max_dist
-# =============================================================================
-
-
 def ee_to_cube_distance_l2(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
-    """Raw L2 distance between EE fingertip and cube center.  [SAC d_grip component]
+    """Raw L2 distance between EE fingertip and cube center.
 
-    Unlike ee_to_cube_distance (which applies tanh for PPO), this returns the
-    unscaled metric so the SAC wrapper can combine it with d_goal and normalise
-    by max_dist in one formula.
+    Unlike ee_to_cube_distance (which applies tanh), this returns the
+    unscaled metric — a constant gradient at all ranges for a coarse pull.
+    Use with a negative weight.
     """
     object: RigidObject = env.scene[object_cfg.name]
     ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
