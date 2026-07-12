@@ -3,7 +3,12 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Custom curriculum terms for the Gen3 reach task."""
+"""Custom curriculum terms for the Gen3 reach task.
+
+Provides modify_reward_weight_ramp, which linearly ramps a reward term's
+weight over a training window. Used to ease in the action-rate and
+joint-velocity smoothness penalties after the policy has learned to reach.
+"""
 
 from __future__ import annotations
 

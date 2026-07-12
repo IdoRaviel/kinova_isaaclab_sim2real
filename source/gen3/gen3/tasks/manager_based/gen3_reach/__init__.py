@@ -3,14 +3,15 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""Gymnasium environment registration for the Gen3 reach task.
+
+Registers Gen3-Reach-v0: the arm learns to drive the fingertip to
+randomized top-down goal poses using PPO (RSL-RL).
+"""
+
 import gymnasium as gym
 
 from . import agents
-
-##
-# Register Gym environments.
-##
-
 
 gym.register(
     id="Gen3-Reach-v0",

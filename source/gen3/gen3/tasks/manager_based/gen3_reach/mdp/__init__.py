@@ -3,7 +3,12 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""This sub-module contains the functions that are specific to the environment."""
+"""MDP functions for the Gen3 reach task.
+
+Re-exports Isaac Lab's built-in MDP terms (observations, actions, events, rewards)
+and adds task-specific fingertip-tracking rewards, gripper reset events, and the
+linear reward-weight curriculum.
+"""
 
 from isaaclab.envs.mdp import *  # noqa: F401, F403
 

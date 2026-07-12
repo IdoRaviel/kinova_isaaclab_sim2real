@@ -1,3 +1,11 @@
+"""Custom observation terms for the Gen3 lift-and-place task.
+
+Provides object_orientation_in_robot_root_frame, which exposes the cube's
+orientation as a quaternion in the robot base frame. Identical to the grasp
+task's observation of the same name; kept separate to preserve each task's
+mdp namespace independence.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

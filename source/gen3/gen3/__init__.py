@@ -3,12 +3,10 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""
-Python module serving as a project/extension template.
+"""gen3 extension — Kinova Gen3 RL tasks for Isaac Lab.
+
+Registers all Gen3 gymnasium environments (reach, grasp, lift-and-place,
+lift-and-place chain) by importing the tasks sub-package.
 """
 
-# Register Gym environments.
 from .tasks import *
-
-# Register UI extensions.
-from .ui_extension_example import *

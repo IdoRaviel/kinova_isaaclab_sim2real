@@ -3,7 +3,14 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Script to train RL agent with RSL-RL."""
+"""Train a Gen3 policy with RSL-RL (PPO).
+
+Logs checkpoints and metrics to logs/rsl_rl/<experiment_name>/<timestamp>/
+(also dumps env.yaml and agent.yaml for reproducibility).  Supports video
+recording (--video), resuming from a checkpoint (--resume/--checkpoint), and
+multi-GPU training (--distributed).  All tunable hyper-parameters come from
+the task's registered rsl_rl_cfg_entry_point.
+"""
 
 from importlib.metadata import version as get_version
 
@@ -82,7 +89,7 @@ torch.backends.cudnn.benchmark = False
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
-    """Train with RSL-RL agent."""
+    """Load the task config and agent config, then run RSL-RL's OnPolicyRunner."""
     # override configurations with non-hydra CLI arguments
     agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs

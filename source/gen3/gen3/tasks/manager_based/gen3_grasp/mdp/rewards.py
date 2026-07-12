@@ -1,3 +1,18 @@
+"""Reward functions for the Gen3 grasp task (PPO).
+
+All terms are wired into the RewardManager via RewTerm entries in
+Gen3GraspEnvCfg (joint_pos_env_cfg.py).
+
+Reward structure:
+  ee_to_cube_distance_l2   — coarse L2 pull: constant gradient drives EE toward cube.
+  ee_to_cube_distance      — fine tanh bonus: sharp signal when EE is at the cube.
+  cube_to_target_distance_l2   — coarse L2 pull: constant gradient drives cube toward target.
+  cube_to_target_distance_tanh — fine tanh bonus: sharp signal when cube is near target.
+
+The coarse + fine pairing gives a constant gradient far away (so the agent is
+never in a flat reward region) and a sharp signal up close (so it learns precision).
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

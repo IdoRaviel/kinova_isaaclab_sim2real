@@ -1,3 +1,14 @@
+"""Kinova Gen3 7-DoF arm + Robotiq 2F-140 gripper asset configuration.
+
+Loads the robot from the vendored USD at source/gen3/gen3_2f140/ and
+exposes KINOVA_GEN3_2F140_CFG, the ArticulationCfg imported by all
+training environments (reach, grasp, lift-and-place).
+
+Actuator gains (stiffness/damping) were tuned for stable joint-position
+control at dt=1/60 s, decimation=2, matching the sim timing used across
+all three tasks.
+"""
+
 from pathlib import Path
 
 import isaaclab.sim as sim_utils

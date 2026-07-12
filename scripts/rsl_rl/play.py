@@ -3,7 +3,14 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Script to play a checkpoint if an RL agent from RSL-RL."""
+"""Run a trained RSL-RL policy in the simulator for visual inspection.
+
+Loads the latest checkpoint from logs/rsl_rl/ (or an explicit --checkpoint
+path) and runs it in an infinite loop.  Prints fingertip-to-goal distance
+every 50 steps; works for both reach (ee_pose command) and grasp
+(object_pose command) tasks.  Supports video recording (--video) and
+real-time pacing (--real-time).
+"""
 
 from importlib.metadata import version as get_version
 
@@ -66,7 +73,7 @@ import gen3.tasks  # noqa: F401
 
 
 def main():
-    """Play with RSL-RL agent."""
+    """Load a checkpoint and run the policy in an infinite rollout loop."""
     # parse configuration
     env_cfg = parse_env_cfg(
         args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs, use_fabric=not args_cli.disable_fabric

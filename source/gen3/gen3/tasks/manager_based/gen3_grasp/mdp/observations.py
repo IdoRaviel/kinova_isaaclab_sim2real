@@ -1,3 +1,10 @@
+"""Custom observation terms for the Gen3 grasp task.
+
+Provides object_orientation_in_robot_root_frame, which exposes the cube's
+orientation as a quaternion in the robot base frame. Added to the policy
+observation group so the agent can see the cube's yaw and adjust its grasp.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

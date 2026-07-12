@@ -1,3 +1,10 @@
+"""PPO runner configuration for the Gen3 grasp task (RSL-RL).
+
+Matched to the published pretrained checkpoint in pretrained_models/robust_grasp/.
+clip_actions=1.0 and empirical_normalization=True are required to reproduce
+the trained policy's behaviour.
+"""
+
 from isaaclab.utils import configclass
 
 from isaaclab_rl.rsl_rl import (
@@ -9,6 +16,12 @@ from isaaclab_rl.rsl_rl import (
 
 @configclass
 class Gen3GraspPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+    """RSL-RL PPO configuration for Gen3-Grasp-v0.
+
+    Network: three-layer MLP [128, 64, 64] for actor and critic.
+    Training budget: 1300 iterations × 30 steps/env.
+    """
+
     num_steps_per_env = 30
     max_iterations = 1300
     save_interval = 50

@@ -3,6 +3,20 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""Environment configuration for the Gen3 reach task (Gen3-Reach-v0).
+
+The arm learns to drive the fingertip (ee_frame, +0.21 m from the wrist flange)
+to randomized top-down goal poses in the robot base frame. Key design choices:
+
+  - Rewards track the fingertip frame, not the wrist flange, for accurate
+    end-point control.
+  - Gripper is randomized open<->closed each reset so the policy is robust
+    to carrying the cube (chain's second reach phase).
+  - Payload mass on the gripper is randomized so the policy is load-robust.
+  - Smoothness penalties (action rate + joint velocity) are ramped in
+    linearly over training steps 25%-60% to avoid disrupting early learning.
+"""
+
 import math
 
 import isaaclab.sim as sim_utils
@@ -22,23 +36,21 @@ from isaaclab_tasks.manager_based.manipulation.reach.reach_env_cfg import ReachE
 from . import mdp
 from .agents.rsl_rl_ppo_cfg import Gen3ReachPPORunnerCfg as _RunnerCfg
 
-##
-# Pre-defined configs
-##
 from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
-
-##
-# Environment configuration
-##
 
 
 @configclass
 class Gen3ReachEnvCfg(ReachEnvCfg):
+    """Gen3 reach environment: fingertip-to-goal tracking with orientation.
+
+    Inherits scene, observations, rewards, and terminations from ReachEnvCfg
+    and overrides the robot, events, rewards, actions, commands, and ee_frame
+    to match the Gen3 + 2F-140 hardware and the fingertip-tracking convention.
+    """
+
     def __post_init__(self):
-        # post init of parent
         super().__post_init__()
 
-        # switch robot to gen3 with 2f-140 gripper
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot"
         )
@@ -79,9 +91,7 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
                 "recompute_inertia": True,
             },
         )
-        # override rewards — track the fingertip grasp point (ee_frame), not the
-        # wrist flange. Custom ee_frame-based functions measure fingertip position;
-        # orientation is identical at the fingertip but uses the ee_frame variant too.
+        # Rewards track ee_frame (fingertip, +0.21 m from flange), not the wrist flange.
         self.rewards.end_effector_position_tracking = RewTerm(
             func=mdp.ee_position_command_error,
             weight=-0.6,
@@ -117,14 +127,13 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
                 "ee_frame_cfg": SceneEntityCfg("ee_frame"),
             },
         )
-        # override actions — arm joints only, gripper excluded
+        # Arm joints only; the gripper is handled separately by reset_gripper_state.
         self.actions.arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["joint_[1-7]"],
             scale=0.5,
             use_default_offset=True,
         )
-        # override command generator body
         self.commands.ee_pose.body_name = "end_effector_link"
         # Orientation convention (blue/z = gripper approach axis toward the fingertips):
         #   pitch=pi   -> approach points straight DOWN (top-down grasp)

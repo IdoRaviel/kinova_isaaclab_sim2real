@@ -1,3 +1,10 @@
+"""Custom termination terms for the Gen3 grasp task.
+
+Provides cube_lifted_success, which ends the episode when the cube is lifted
+above a height threshold. Early termination on success lets a new episode
+start immediately, increasing training throughput.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

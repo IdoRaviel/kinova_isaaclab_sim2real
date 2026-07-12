@@ -3,7 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Custom reset events for the Gen3 reach task."""
+"""Custom reset events for the Gen3 reach task.
+
+Provides two reset events used in Gen3ReachEnvCfg:
+  reset_joints_held_uniform — randomize a joint AND hold it with the PD drive target
+                               (needed for the gripper so it does not snap back).
+  reset_joints_by_offset    — standard offset reset, re-exported from Isaac Lab MDP.
+"""
 
 from __future__ import annotations
 

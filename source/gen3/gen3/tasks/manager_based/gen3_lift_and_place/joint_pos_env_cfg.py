@@ -1,3 +1,16 @@
+"""Environment configurations for the Gen3 lift-and-place tasks.
+
+Defines three environments:
+
+  Gen3LiftAndPlaceEnvCfg        — base training env: single end-to-end policy
+                                   lifts and places a cube at a random 3-D target.
+  Gen3LiftAndPlaceEnvCfg_PLAY   — play variant with fewer envs and no obs noise.
+  Gen3LiftAndPlaceChainEnvCfg   — inference-only env that exposes both the grasp
+                                   ('policy') and reach ('reach') observation groups
+                                   so the play script can feed each frozen policy
+                                   the observations it was trained on.
+"""
+
 import math
 
 from isaaclab.assets import RigidObjectCfg
@@ -16,15 +29,19 @@ from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvC
 
 from . import mdp
 
-##
-# Pre-defined configs
-##
 from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
 from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
 class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
+    """Gen3 lift-and-place base environment.
+
+    Inherits from LiftEnvCfg and configures the Gen3 + 2F-140 robot, the DexCube
+    object, and the ee_frame sensor. Rewards are inherited from LiftEnvCfg unchanged.
+    Sim timing (dt=1/60, decimation=2) matches the reach and grasp tasks.
+    """
+
     def __post_init__(self):
         super().__post_init__()
 
@@ -127,16 +144,13 @@ class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
 
 @configclass
 class Gen3LiftAndPlaceEnvCfg_PLAY(Gen3LiftAndPlaceEnvCfg):
+    """Play variant: fewer envs, wider spacing, observation noise disabled."""
+
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
-
-
-##
-# Policy-chaining (inference-only) env
-##
 
 
 @configclass

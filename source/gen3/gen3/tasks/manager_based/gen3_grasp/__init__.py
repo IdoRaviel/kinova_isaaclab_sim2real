@@ -1,10 +1,12 @@
+"""Gymnasium environment registration for the Gen3 grasp task.
+
+Registers Gen3-Grasp-v0: the arm picks a cube from a random IK-initialized
+start pose and places it at a random 3-D target, trained with PPO (RSL-RL).
+"""
+
 import gymnasium as gym
 
 from . import agents
-
-##
-# Register Gym environments.
-##
 
 gym.register(
     id="Gen3-Grasp-v0",

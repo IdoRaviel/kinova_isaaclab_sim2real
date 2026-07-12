@@ -142,6 +142,7 @@ _IK_CACHE: dict[str, _ArmIK] = {}
 
 
 def _get_ik(device) -> _ArmIK:
+    """Return the singleton _ArmIK for the given device, creating it on first call."""
     key = str(device)
     if key not in _IK_CACHE:
         _IK_CACHE[key] = _ArmIK(torch.device(device))
@@ -227,12 +228,25 @@ def reset_above_cube_ik(
     tool_offset: float = 0.21,
     jitter_deg: float = 15.0,
     num_seeds: int = 4,
-    cube_jitter: float = 0.0,   # max lateral cube offset (m) from directly-below the gripper
+    cube_jitter: float = 0.0,
 ):
-    """Reset event: cube at a random pose + arm IK-placed top-down above it (varied configs).
+    """Reset event: place cube at a random pose and IK the arm top-down above it.
 
-    The IK is run ONCE (first call) to precompute a table of start states; each reset then
-    just samples a row, so per-reset cost is an index plus two state writes.
+    Args:
+        cube_x:      (min, max) range for the cube x position in the robot base frame (m).
+        cube_y:      (min, max) range for the cube y position in the robot base frame (m).
+        cube_z:      Fixed cube spawn height (m); default 0.055 matches the table surface.
+        yaw_range:   (min, max) range for the cube yaw (rad).
+        hover:       Gripper hover height above the cube top (m).
+        tool_offset: Distance from the wrist flange to the fingertip grasp point (m).
+                     Must match the ee_frame offset in the env config (+0.21 m).
+        jitter_deg:  Random yaw jitter added on top of the nearest-face snap (degrees).
+        num_seeds:   IK seeds tried per target; more seeds -> higher convergence rate.
+        cube_jitter: Max lateral offset applied to the cube after table placement (m),
+                     so the cube is not exactly under the gripper at reset start.
+
+    The IK is run once at startup to build a table of valid start states; each
+    reset samples a row, so per-reset cost is negligible (one index + two state writes).
     """
     device = env.device
     robot = env.scene["robot"]

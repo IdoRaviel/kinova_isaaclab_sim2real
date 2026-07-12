@@ -3,6 +3,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""PPO runner configuration for the Gen3 reach task (RSL-RL).
+
+Matched to the published pretrained checkpoint in pretrained_models/reach_with_orientation/.
+"""
+
 from isaaclab.utils import configclass
 
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
@@ -10,6 +15,12 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class Gen3ReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+    """RSL-RL PPO configuration for Gen3-Reach-v0.
+
+    Network: two-layer MLP [64, 64] for actor and critic.
+    Training budget: 1500 iterations × 24 steps/env.
+    """
+
     num_steps_per_env = 24
     max_iterations = 1500
     save_interval = 50

@@ -1,3 +1,10 @@
+"""PPO runner configuration for the Gen3 lift-and-place task (RSL-RL).
+
+Used for training Gen3-LiftAndPlace-v0 (single end-to-end policy).
+Not used during chain inference — the chain loads reach and grasp
+checkpoints separately via lift_and_place_cfg.py.
+"""
+
 from isaaclab.utils import configclass
 
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
@@ -5,6 +12,12 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class Gen3LiftAndPlacePPORunnerCfg(RslRlOnPolicyRunnerCfg):
+    """RSL-RL PPO configuration for Gen3-LiftAndPlace-v0.
+
+    Network: three-layer MLP [256, 128, 64] for actor and critic.
+    Training budget: 3000 iterations × 24 steps/env.
+    """
+
     num_steps_per_env = 24
     max_iterations = 3000
     save_interval = 50

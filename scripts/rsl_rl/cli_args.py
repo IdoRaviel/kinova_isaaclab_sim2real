@@ -3,6 +3,15 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""CLI argument helpers for RSL-RL scripts.
+
+Provides add_rsl_rl_args (registers the RSL-RL argument group on an existing
+argparse parser), parse_rsl_rl_cfg (loads the registered agent config for a
+task and applies CLI overrides), and update_rsl_rl_cfg (applies CLI overrides
+to an already-loaded config).  All three are imported by train.py, play.py,
+and eval/eval.py.
+"""
+
 from __future__ import annotations
 
 import argparse

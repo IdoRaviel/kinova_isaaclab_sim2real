@@ -1,3 +1,18 @@
+"""Environment configuration for the Gen3 grasp task (Gen3-Grasp-v0).
+
+The arm picks a cube from a random IK-initialized start pose (gripper top-down
+above the cube, varied joint configuration) and places it at a random 3-D target.
+
+Key design choices:
+  - IK-randomized resets (reset_above_cube_ik) train robustness to the range of
+    start configurations the reach policy delivers at handoff.
+  - Reward structure: coarse L2 pull (constant gradient) + fine tanh bonus for
+    both EE-to-cube and cube-to-target, plus a hard lifting bonus to break the
+    "hover without grasping" local optimum.
+  - Sim timing (dt=1/60, decimation=2) matches the reach task so both frozen
+    policies run at the same control frequency in the chain.
+"""
+
 import math
 
 from isaaclab.assets import RigidObjectCfg
@@ -18,17 +33,19 @@ from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvC
 from . import mdp
 from .agents.rsl_rl_ppo_cfg import Gen3GraspPPORunnerCfg as _RunnerCfg
 
-##
-# Pre-defined configs
-##
 from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
 from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
 class Gen3GraspEnvCfg(LiftEnvCfg):
+    """Gen3 grasp environment: pick cube from IK-randomized start, place at 3-D target.
+
+    Inherits scene, observations, rewards, and terminations from LiftEnvCfg and
+    overrides them for the Gen3 + 2F-140 hardware and the robust-grasp training setup.
+    """
+
     def __post_init__(self):
-        # post init of parent
         super().__post_init__()
 
         # --- Sim ----
@@ -207,6 +224,8 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
 
 @configclass
 class Gen3GraspEnvCfg_PLAY(Gen3GraspEnvCfg):
+    """Play variant: fewer envs, wider spacing, observation noise disabled."""
+
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50

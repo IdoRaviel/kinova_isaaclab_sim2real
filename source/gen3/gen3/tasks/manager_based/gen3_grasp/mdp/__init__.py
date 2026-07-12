@@ -1,4 +1,11 @@
-"""This sub-module contains MDP functions for the Gen3 grasp task."""
+"""MDP functions for the Gen3 grasp task.
+
+Re-exports Isaac Lab's built-in lift MDP terms and adds:
+  reset_above_cube_ik  — IK-based start-state reset (cube + arm together).
+  observations         — object orientation in robot root frame.
+  rewards              — EE-to-cube and cube-to-target distance terms (PPO).
+  terminations         — episode success on cube lift.
+"""
 
 from isaaclab_tasks.manager_based.manipulation.lift.mdp import *  # noqa: F401, F403
 

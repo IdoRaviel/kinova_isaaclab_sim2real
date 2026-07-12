@@ -16,6 +16,12 @@ from dataclasses import dataclass
 
 @dataclass
 class ChainCfg:
+    """All tunable knobs for play_lift_and_place.py.
+
+    Edit these values to tune the reach->grasp->carry chain without touching
+    the play script itself.  See inline comments for the meaning of each field.
+    """
+
     # ---- environment ----
     task: str = "Gen3-LiftAndPlace-Chain-v0"
     num_envs: int = 1
