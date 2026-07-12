@@ -13,6 +13,8 @@
 **/*.usda
 **/*.usdc
 **/*.usdz
+# Exception: the vendored robot USD that the training envs and test_sim both load
+!source/gen3/gen3_2f140/kinova_gen3_robotiq_2f_140.usd
 
 # Python
 .DS_Store

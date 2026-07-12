@@ -9,9 +9,8 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import os
 
-USD_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "kinova_gen3_robotiq_2f_140.usd"
-)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+USD_PATH = os.path.join(_REPO_ROOT, "source", "gen3", "gen3_2f140", "kinova_gen3_robotiq_2f_140.usd")
 
 GRIPPER_OPEN = {"finger_joint": 0.0}
 GRIPPER_CLOSE = {"finger_joint": 0.700}

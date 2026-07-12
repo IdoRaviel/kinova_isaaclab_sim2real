@@ -6,7 +6,7 @@ from isaaclab.assets.articulation import ArticulationCfg
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-USD_PATH = _REPO_ROOT / "test_sim" / "kinova_gen3_robotiq_2f_140.usd"
+USD_PATH = _REPO_ROOT / "source" / "gen3" / "gen3_2f140" / "kinova_gen3_robotiq_2f_140.usd"
 
 
 KINOVA_GEN3_2F140_CFG = ArticulationCfg(
