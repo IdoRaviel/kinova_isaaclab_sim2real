@@ -39,6 +39,7 @@ docker/.container.cfg
 # Outputs
 **/output/*
 **/outputs/*
+**/vision_dataset/*
 **/videos/*
 **/wandb/*
 **/.neptune/*

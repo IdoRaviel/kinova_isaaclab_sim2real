@@ -12,6 +12,16 @@ sequence — a *reach* policy drives the gripper top-down above the cube, then a
 
 ---
 
+## Vision-based pose estimation (in progress)
+
+This branch adds a fixed workspace camera to the chain env and scripts to collect
+an RGB + cube-pose dataset from chain rollouts (`scripts/rsl_rl/collect_vision_data.py`,
+`scripts/rsl_rl/split_vision_dataset.py`), aimed at eventually estimating cube pose
+from vision instead of privileged simulation state. This is an active experiment,
+not yet integrated into the pick-and-place chain.
+
+---
+
 ## Installation
 
 1. Install Isaac Lab following the official
