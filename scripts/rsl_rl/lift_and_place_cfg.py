@@ -62,7 +62,7 @@ class ChainCfg:
     # ---- pauses: hold still between phases (seconds) ----
     pause_after_reach: float = 0.3  # held by the reach policy, before grasp takes over
     pause_after_grasp: float = (
-        0.3  # held by the grasp policy (cube stays lifted), before carry
+        0.1  # held by the grasp policy (cube stays lifted), before carry
     )
 
     # ---- phase GRASP: lift the cube straight up, in place ----

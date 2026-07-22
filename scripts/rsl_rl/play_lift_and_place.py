@@ -138,16 +138,19 @@ def main():
     obj_cmd = env.unwrapped.command_manager.get_term("object_pose")  # grasp place target (phases GRASP/PAUSE2)
 
     # --- phase-colored target marker: one sphere at the active phase's target ---
+    # Same radius as the (now-hidden) ee_frame debug sphere, for visual consistency.
     def _sphere(color):
         return sim_utils.SphereCfg(
-            radius=0.005, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color)
+            radius=0.01, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color)
         )
+    hidden_sphere = _sphere((0.0, 0.0, 0.0))
+    hidden_sphere.visible = False
     target_vis = VisualizationMarkers(VisualizationMarkersCfg(
         prim_path="/Visuals/Command/active_target",
         markers={
-            "black": _sphere((0.0, 0.0, 0.0)),   # first reach (above the cube)
-            "green": _sphere((0.0, 1.0, 0.0)),   # grasp / lift target
-            "purple": _sphere((0.5, 0.0, 0.5)),  # second reach (carry, in the air)
+            "blue": _sphere((0.0, 0.0, 1.0)),    # first reach + pause1 (above the cube)
+            "green": _sphere((0.0, 1.0, 0.0)),   # second reach / carry (in the air)
+            "hidden": hidden_sphere,              # grasp / pause2: no target sphere shown
         },
     ))
 
@@ -262,9 +265,9 @@ def main():
                                                       obj_cmd.pose_command_b[:, :3])
         use_grasp_vis = (phase == GRASP) | (phase == PAUSE2)
         active_pos = torch.where(use_grasp_vis.unsqueeze(-1), grasp_target_w, target_w)
-        midx = torch.zeros(num_envs, dtype=torch.long, device=device)  # black (reach/pause1)
-        midx[use_grasp_vis] = 1                                         # green (grasp/pause2)
-        midx[phase == CARRY] = 2                                        # purple (carry)
+        midx = torch.zeros(num_envs, dtype=torch.long, device=device)  # blue (reach/pause1)
+        midx[use_grasp_vis] = 2                                         # hidden (grasp/pause2)
+        midx[phase == CARRY] = 1                                        # green (carry)
         target_vis.visualize(translations=active_pos, marker_indices=midx)
 
         # --- state machine (transitions evaluated latest-phase-first to avoid skipping a phase) ---

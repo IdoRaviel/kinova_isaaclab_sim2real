@@ -1,14 +1,46 @@
 # Kinova Gen3 RL Pick-and-Place
 
+> Final project for Bar-Ilan University's AI-Excellence Program, developed in
+> collaboration with a Bar-Ilan University research lab.
+
 Reinforcement learning pipeline for the **Kinova Gen3** robot arm, trained in
 [Isaac Lab](https://github.com/isaac-sim/IsaacLab).
 
-The headline result is a **pick-and-place chain**: two frozen policies run in
-sequence — a *reach* policy drives the gripper top-down above the cube, then a
-*grasp* policy picks it up and lifts it to a target.
+The headline result is a **pick-and-place chain**: two policies I trained
+separately — a *reach* policy and a *grasp* policy — are frozen and chained
+together at inference through **three phases**: reach first drives the
+gripper top-down above the cube, then grasp picks it up and lifts it, then
+reach takes back over to carry the cube to a target pose in the air.
 
 > Pre-trained models are included — you can run the full chain immediately
 > without training.
+
+<video src="medias/kinova_video.mp4" controls width="600"></video>
+
+*Target markers: **blue** = target pose for the first reach (above the cube),
+**green** = target pose for the second reach (carry, in the air).*
+
+---
+
+## Background
+
+- **Deep RL**: both policies are trained with continuous-control PPO,
+  observing joint state + pose commands and outputting joint position
+  targets (+ gripper command).
+- **Algorithm**: PPO via `rsl_rl`, trained per-task in Isaac Lab's
+  GPU-parallel simulation, then frozen and composed at play-time.
+- **Reward shaping**: reward terms were iteratively designed and tuned per
+  task (e.g. distance-to-target terms, a lifting-the-object bonus for grasp,
+  action-rate/velocity penalties) to shape behavior and break local optima,
+  such as hovering near the cube without ever grasping it.
+- **Training monitoring**: progress was tracked live from the training
+  script's console output, printed each iteration — mean total reward, a
+  per-term reward breakdown, PPO losses, entropy, and other diagnostics —
+  used to judge convergence and compare runs.
+
+Currently, the cube's location used to set the reach/grasp targets is computed
+via IK from ground-truth simulator state; vision-based pose estimation from a
+workspace camera is in progress on a separate branch.
 
 ---
 
