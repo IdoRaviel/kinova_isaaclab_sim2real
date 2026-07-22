@@ -52,7 +52,6 @@ from rsl_rl.runners import OnPolicyRunner
 
 import isaaclab.sim as sim_utils
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.math import (
     combine_frame_transforms,
@@ -141,7 +140,7 @@ def main():
     # --- phase-colored target marker: one sphere at the active phase's target ---
     def _sphere(color):
         return sim_utils.SphereCfg(
-            radius=0.02, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color)
+            radius=0.005, visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color)
         )
     target_vis = VisualizationMarkers(VisualizationMarkersCfg(
         prim_path="/Visuals/Command/active_target",
@@ -151,11 +150,6 @@ def main():
             "purple": _sphere((0.5, 0.0, 0.5)),  # second reach (carry, in the air)
         },
     ))
-    # second-reach (carry) target also shows orientation axes (sphere + arrows)
-    axes_cfg = FRAME_MARKER_CFG.copy()
-    axes_cfg.prim_path = "/Visuals/Command/reach2_axes"
-    axes_cfg.markers["frame"].scale = (0.15, 0.15, 0.15)
-    reach2_axes_vis = VisualizationMarkers(axes_cfg)
 
     # --- per-env state ---
     phase = torch.full((num_envs,), REACH, dtype=torch.long, device=device)
@@ -272,17 +266,6 @@ def main():
         midx[use_grasp_vis] = 1                                         # green (grasp/pause2)
         midx[phase == CARRY] = 2                                        # purple (carry)
         target_vis.visualize(translations=active_pos, marker_indices=midx)
-
-        # carry target: also draw orientation axes (arrows) at the (purple) sphere.
-        # Always pass all envs (constant count, instancer stays visible) and gate by scale:
-        # scale 0 hides non-carry envs. NOTE: set_visibility(False) makes visualize() a no-op
-        # (it returns early when the instancer is hidden), so the arrows could never reappear.
-        axes_scale = torch.zeros(num_envs, 3, device=device)
-        axes_scale[phase == CARRY] = 1.0
-        reach2_axes_vis.visualize(
-            translations=target_w, orientations=target_quat_w, scales=axes_scale,
-            marker_indices=torch.zeros(num_envs, dtype=torch.long, device=device),
-        )
 
         # --- state machine (transitions evaluated latest-phase-first to avoid skipping a phase) ---
         if not CFG.reach_only:

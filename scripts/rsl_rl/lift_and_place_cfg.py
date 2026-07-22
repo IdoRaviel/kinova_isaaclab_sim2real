@@ -28,15 +28,11 @@ class ChainCfg:
 
     # ---- frozen policies: each is a checkpoint + the agent.yaml saved with that run ----
     reach_checkpoint: str = "pretrained_models/reach_with_orientation/policy.pt"
-    reach_agent_cfg: str = (
-        "pretrained_models/reach_with_orientation/agent.yaml"
-    )
+    reach_agent_cfg: str = "pretrained_models/reach_with_orientation/agent.yaml"
     # retrained robust grasp; swap to "pretrained_models/grasp/policy.pt" + ".../agent.yaml"
     # to use the old single-pose grasp instead.
     grasp_checkpoint: str = "pretrained_models/robust_grasp/policy.pt"
-    grasp_agent_cfg: str = (
-        "pretrained_models/robust_grasp/agent.yaml"
-    )
+    grasp_agent_cfg: str = "pretrained_models/robust_grasp/agent.yaml"
 
     # ---- phase REACH: drive the fingertip to a point above the cube ----
     # Handoff is a hybrid of three tests (whichever fires first):
