@@ -15,7 +15,7 @@ reach takes back over to carry the cube to a target pose in the air.
 > Pre-trained models are included — you can run the full chain immediately
 > without training.
 
-<video src="medias/kinova_video.mp4" controls width="600"></video>
+<video src="https://github.com/user-attachments/assets/b1c831af-7756-4d87-803d-62f1a6ef21f7" controls width="600"></video>
 
 *Target markers: **blue** = target pose for the first reach (above the cube),
 **green** = target pose for the second reach (carry, in the air).*
