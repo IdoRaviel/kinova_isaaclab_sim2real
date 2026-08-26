@@ -22,6 +22,17 @@ layout); each policy is fed the group it was trained on.
 
 All tunable values live in ``lift_and_place_cfg.py`` (the ``CFG`` object). Only Isaac's
 launcher options (``--headless``, ``--device``, ...) are taken from the command line.
+
+With ``--vision``, the chain runs on the ``Gen3-LiftAndPlace-Chain-Vision-v0`` env and
+every use of the cube's pose comes from the trained CubePoseNet's prediction on the
+workspace camera image instead of privileged simulator state: the grasp policy's
+``object_position``/``object_orientation`` observations (swapped inside the env cfg),
+the reach target above the cube (position + yaw), the in-place lift target, and the
+GRASP -> PAUSE2 "cube is lifted" check (predicted cube height). The true cube pose is
+then read only for diagnostics (periodic prediction-error print and a per-episode
+success count). Because the prediction refreshes after each sim step, the reach target
+is re-set from the latest prediction on every REACH step -- this also covers the
+one-step camera lag right after a reset.
 """
 
 import argparse
@@ -30,10 +41,23 @@ from isaaclab.app import AppLauncher
 
 from lift_and_place_cfg import CFG
 
-# Only launcher args are taken from the CLI; everything else comes from CFG.
+# Only launcher args (plus the vision switch) are taken from the CLI; everything else comes from CFG.
 parser = argparse.ArgumentParser(description="Chain reach + grasp policies (lift-and-place).")
+parser.add_argument(
+    "--vision",
+    action="store_true",
+    help="Drive the chain from CubePoseNet's camera prediction instead of ground-truth cube pose.",
+)
+parser.add_argument(
+    "--vision_checkpoint",
+    type=str,
+    default="pretrained_models/cube_pose/best.pt",
+    help="CubePoseNet checkpoint (used with --vision).",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+if args_cli.vision:
+    args_cli.enable_cameras = True  # the vision obs terms need the camera rendered
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -107,9 +131,15 @@ def _load_agent_cfg(path):
 def main():
     device = args_cli.device
 
-    # --- build the combined env (exposes both 'policy' (grasp) and 'reach' obs groups) ---
-    env_cfg = parse_env_cfg(CFG.task, device=device, num_envs=CFG.num_envs)
-    env = RslRlVecEnvWrapper(gym.make(CFG.task, cfg=env_cfg), clip_actions=None)
+    # --- build the combined env (exposes both 'policy' (grasp) and 'reach' obs groups);
+    # with --vision, the env's object obs terms are fed by CubePoseNet instead ---
+    task = "Gen3-LiftAndPlace-Chain-Vision-v0" if args_cli.vision else CFG.task
+    env_cfg = parse_env_cfg(task, device=device, num_envs=CFG.num_envs)
+    if args_cli.vision:
+        env_cfg.observations.policy.object_position.params["checkpoint"] = args_cli.vision_checkpoint
+        env_cfg.observations.policy.object_orientation.params["checkpoint"] = args_cli.vision_checkpoint
+        print(f"[info] vision checkpoint: {args_cli.vision_checkpoint}")
+    env = RslRlVecEnvWrapper(gym.make(task, cfg=env_cfg), clip_actions=None)
     num_envs = env.num_envs
 
     # --- grasp policy: reads group 'policy', outputs 8 actions (arm + gripper) ---
@@ -137,6 +167,14 @@ def main():
     ee_frame = env.unwrapped.scene["ee_frame"]          # fingertip frame (+0.21 m off the flange)
     ee_cmd = env.unwrapped.command_manager.get_term("ee_pose")      # reach target (phases REACH/CARRY)
     obj_cmd = env.unwrapped.command_manager.get_term("object_pose")  # grasp place target (phases GRASP/PAUSE2)
+
+    def cube_pose():
+        """Cube pose in the robot-root frame: CubePoseNet's prediction (--vision) or ground truth."""
+        if args_cli.vision:
+            cache = env.unwrapped._vision_pose_cache  # latest prediction, cached by the obs terms
+            return cache["pos"], cache["quat"]
+        return subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
+                                         obj.data.root_pos_w, obj.data.root_quat_w)
 
     # --- phase-colored target marker: one sphere at the active phase's target ---
     def _sphere(color):
@@ -166,6 +204,9 @@ def main():
     prev_ee_w = ee_frame.data.target_pos_w[:, 0, :].clone()               # prev fingertip pos (for speed)
     best_dist = torch.full((num_envs,), float("inf"), device=device)      # running-min reach dist (plateau)
     plateau_count = torch.zeros(num_envs, device=device)                  # steps since dist last improved
+    # success bookkeeping (--vision diagnostics): episodes finished / episodes that reached CARRY
+    episodes_done = 0
+    episodes_carried = 0
 
     # pause durations (s) -> control steps
     step_dt = getattr(env.unwrapped, "step_dt", None) or (env.unwrapped.physics_dt * env.unwrapped.cfg.decimation)
@@ -176,8 +217,7 @@ def main():
     def set_above_cube_target(ids=None):
         """Reach target: directly above the cube at `reach_target_z`, gripper yaw aligned to
         the cube's yaw (wrapped to the nearest 90 deg face -> a valid grasp on a square cube)."""
-        rp, rq = robot.data.root_pos_w, robot.data.root_quat_w
-        cube_p_b, cube_q_b = subtract_frame_transforms(rp, rq, obj.data.root_pos_w, obj.data.root_quat_w)
+        cube_p_b, cube_q_b = cube_pose()
         _, _, cube_yaw = euler_xyz_from_quat(cube_q_b)
         yaw = cube_yaw - HALF_PI * torch.round(cube_yaw / HALF_PI)   # nearest face, in [-pi/4, pi/4]
         quat = quat_from_euler_xyz(torch.zeros_like(yaw), torch.full_like(yaw, math.pi), yaw)  # top-down
@@ -192,8 +232,7 @@ def main():
     def set_lift_target(ids):
         """Grasp place target: directly above the cube (xy tracks the cube) at `grasp_lift_z`,
         so the grasp policy just lifts the cube straight up, in place."""
-        rp, rq = robot.data.root_pos_w, robot.data.root_quat_w
-        cube_p_b, _ = subtract_frame_transforms(rp, rq, obj.data.root_pos_w, obj.data.root_quat_w)
+        cube_p_b, _ = cube_pose()
         obj_cmd.pose_command_b[ids, 0] = cube_p_b[ids, 0]
         obj_cmd.pose_command_b[ids, 1] = cube_p_b[ids, 1]
         obj_cmd.pose_command_b[ids, 2] = CFG.grasp_lift_z
@@ -254,7 +293,10 @@ def main():
         dist = torch.norm(ee_now_w - target_w, dim=-1)                              # fingertip -> reach target
         ee_speed = torch.norm(ee_now_w - prev_ee_w, dim=-1) / step_dt              # fingertip speed (m/s)
         prev_ee_w = ee_now_w.clone()
-        cube_z = obj.data.root_pos_w[:, 2]                                          # cube height
+        if args_cli.vision:
+            cube_z = cube_pose()[0][:, 2]   # predicted height (robot root == world origin in this scene)
+        else:
+            cube_z = obj.data.root_pos_w[:, 2]                                      # cube height
 
         # plateau tracking (REACH only): count steps since the reach distance last improved
         in_reach = phase == REACH
@@ -322,9 +364,19 @@ def main():
             phase = torch.where(done_reach, torch.full_like(phase, PAUSE1), phase)
             pause_left = torch.where(done_reach, torch.full_like(pause_left, pause1_steps), pause_left)
 
+        # --vision: keep the reach target glued to the latest prediction while approaching
+        # (also covers the one-step camera lag right after a reset)
+        if args_cli.vision:
+            still_reaching = phase == REACH
+            if still_reaching.any():
+                set_above_cube_target(still_reaching.nonzero(as_tuple=False).flatten())
+
         # --- on episode reset: restart at REACH and retarget above the new cube ---
         if dones.any():
             done_ids = dones.nonzero(as_tuple=False).flatten()
+            if args_cli.vision:  # success diagnostics: count before the phase is cleared
+                episodes_done += done_ids.numel()
+                episodes_carried += int((phase[done_ids] == CARRY).sum())
             phase[done_ids] = REACH
             reach_steps[done_ids] = 0.0
             pause_left[done_ids] = 0
@@ -333,13 +385,22 @@ def main():
             plateau_count[done_ids] = 0.0
             prev_ee_w[done_ids] = ee_frame.data.target_pos_w[done_ids, 0, :]  # avoid a spurious speed spike
             set_above_cube_target(done_ids)
+            if args_cli.vision:
+                pct = 100.0 * episodes_carried / episodes_done
+                print(f"[episodes] {episodes_carried}/{episodes_done} reached CARRY ({pct:.0f}%)")
 
         if timestep % 50 == 0:
             cube_b, _ = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
                                                   obj.data.root_pos_w)
             ph = "reach" if CFG.reach_only else PHASE_NAME[int(phase[0])]
-            print(f"[t {timestep}] env0 phase={ph} dist={dist[0]:.3f}m ee_speed={ee_speed[0]:.3f} "
-                  f"cube_z={cube_z[0]:.3f} cube_b=({cube_b[0, 0]:.2f},{cube_b[0, 1]:.2f},{cube_b[0, 2]:.2f})")
+            if args_cli.vision:
+                # diagnostics: prediction error vs the true (privileged) cube position
+                err_cm = (cube_pose()[0] - cube_b).norm(dim=-1) * 100.0
+                print(f"[t {timestep}] env0 phase={ph} dist={dist[0]:.3f}m cube_z_pred={cube_z[0]:.3f} "
+                      f"vision_err={err_cm[0]:.2f}cm (mean {err_cm.mean():.2f}cm)")
+            else:
+                print(f"[t {timestep}] env0 phase={ph} dist={dist[0]:.3f}m ee_speed={ee_speed[0]:.3f} "
+                      f"cube_z={cube_z[0]:.3f} cube_b=({cube_b[0, 0]:.2f},{cube_b[0, 1]:.2f},{cube_b[0, 2]:.2f})")
         timestep += 1
 
         # real-time pacing
