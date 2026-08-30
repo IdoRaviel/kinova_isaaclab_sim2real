@@ -13,8 +13,9 @@ Defines three environments:
 
 import math
 
+import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
-from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors import CameraCfg, FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
@@ -53,6 +54,36 @@ class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
         # --- Robot: use USD default joint positions ---
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
+        )
+
+        # --- Camera: fixed, elevated, oblique view of the workspace for vision-based
+        # pose estimation. Placed beyond the cube's reachable x-range and centered in y
+        # so the fingers' vertical descent doesn't fully block the cube during grasp.
+        # convention="world" (forward=+X, up=+Z) is used because the robot base sits at
+        # the world origin with identity rotation, so this pose *is* the extrinsics in
+        # the robot-root frame the policies were trained on -- no extra frame conversion
+        # needed later.
+        self.scene.camera = CameraCfg(
+            prim_path="{ENV_REGEX_NS}/Camera",
+            offset=CameraCfg.OffsetCfg(
+                pos=(1.319, 0.0, 1.153),
+                rot=(
+                    0.0,
+                    -0.436,
+                    0.0,
+                    0.900,
+                ),  # looks at (0.45, 0, 0.055), ~50 deg down-tilt
+                convention="world",
+            ),
+            data_types=["rgb"],
+            spawn=sim_utils.PinholeCameraCfg(
+                focal_length=24.0,
+                focus_distance=400.0,
+                horizontal_aperture=20.955,
+                clipping_range=(0.1, 4.0),
+            ),
+            width=640,
+            height=480,
         )
 
         # --- Actions: arm (7 joints) + gripper (binary open/close) ---
@@ -212,8 +243,8 @@ class Gen3LiftAndPlaceChainEnvCfg(Gen3LiftAndPlaceEnvCfg):
         # trained workspace (reach was trained on y in [-0.2, 0.2], grasp on [-0.3, 0.3]).
         self.scene.object.init_state.pos = [0.45, 0.0, 0.055]
         self.events.reset_object_position.params["pose_range"] = {
-            "x": (-0.10, 0.10),   # -> x in [0.35, 0.55]
-            "y": (-0.20, 0.20),   # -> y in [-0.20, 0.20]
+            "x": (-0.10, 0.10),  # -> x in [0.35, 0.55]
+            "y": (-0.20, 0.20),  # -> y in [-0.20, 0.20]
             "z": (0.0, 0.0),
             "yaw": (-math.pi, math.pi),
         }

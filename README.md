@@ -38,9 +38,85 @@ reach takes back over to carry the cube to a target pose in the air.
   per-term reward breakdown, PPO losses, entropy, and other diagnostics —
   used to judge convergence and compare runs.
 
-Currently, the cube's location used to set the reach/grasp targets is computed
-via IK from ground-truth simulator state; vision-based pose estimation from a
-workspace camera is in progress on a separate branch.
+By default the cube's location used to set the reach/grasp targets is read
+from ground-truth simulator state; this repo also adds a **vision-based
+alternative** — see the next section.
+
+---
+
+## Vision-based cube pose estimation
+
+**Motivation.** In simulation the cube's pose comes for free: the chain reads it
+directly from privileged simulator state to compute the reach and grasp targets.
+A real robot has no such oracle — the cube's pose must be *perceived*. This
+branch replaces the ground-truth cube pose with an estimate from a fixed
+workspace RGB camera, removing the chain's dependence on privileged state and
+taking a necessary step toward running it on real hardware.
+
+**Setup.** A fixed, elevated, oblique-view camera is added to the chain
+environment, placed beyond the cube's reachable range and centered laterally so
+the descending gripper never fully occludes the cube.
+
+### 1. Collect a dataset from chain rollouts
+
+```bash
+python scripts/rsl_rl/vision/collect_vision_data.py --output_dir vision_dataset --num_frames 10000
+python scripts/rsl_rl/vision/split_vision_dataset.py --dataset_dir vision_dataset
+```
+
+The collector runs the same frozen reach → grasp → carry chain as the play
+script across parallel envs and saves, at each step, the camera's RGB frame
+together with ground-truth labels. Near-static pause frames are subsampled and
+settled carry frames skipped, so the dataset isn't dominated by duplicates. The
+splitter then shuffles (fixed seed) and splits into train/val/test (1000 val +
+1000 test frames, remainder train), so each split gets a representative mix of
+phases.
+
+Dataset layout (`vision_dataset/`):
+
+```
+images/NNNNNN.png                RGB frames (320x240)
+labels.jsonl                     one JSON record per frame:
+                                   file, env_id, step, phase,
+                                   cube_pos (robot-root frame, m),
+                                   cube_quat_wxyz (robot-root frame),
+                                   corners_2d (8 cube corners, pixels)
+meta.json                        camera intrinsics + fixed extrinsics
+{train,val,test}_labels.jsonl    split label files
+```
+
+The 2-D corner keypoints and camera geometry are saved to keep a keypoint+PnP
+variant possible without re-collecting; the current model doesn't use them.
+
+### 2. Train and evaluate the pose model
+
+```bash
+python scripts/rsl_rl/vision/train_cube_pose.py --dataset_dir vision_dataset
+python scripts/rsl_rl/vision/eval_cube_pose.py    # test split by default
+```
+
+`CubePoseNet` (a ResNet-18 backbone with an MLP head) regresses the cube's
+3-D position and orientation (6-D rotation representation) directly from a
+single RGB frame. Trained for 30 epochs; the best checkpoint by validation
+position error is included at `pretrained_models/cube_pose/best.pt`.
+
+**Results on the held-out test split (1000 frames): 0.50 cm position error,
+1.2° rotation error.** Accuracy is best in the phases that matter most — while
+the cube sits unoccluded on the table, before grasping (~0.3–0.4 cm) — and
+worst right after the lift, when the closed gripper partially hides the cube
+(~1 cm), still small relative to the 7.2 cm cube.
+
+### 3. Run the chain on vision
+
+```bash
+python scripts/rsl_rl/play_lift_and_place.py --vision
+```
+
+Same chain as the default play script, but the grasp policy's object
+observations and every cube-pose-derived target/transition are computed from
+`CubePoseNet`'s prediction on the live camera image instead of the simulator's
+ground-truth cube pose (which is then used only for diagnostics: a periodic
+prediction-error print and a per-episode success count).
 
 ---
 
@@ -70,7 +146,8 @@ python scripts/rsl_rl/play_lift_and_place.py
 Loads the pre-trained reach and grasp policies from `pretrained_models/` and
 runs the reach → pause → grasp → carry sequence. Tunable settings (handoff
 thresholds, phase timeouts, carry target range) live in
-`scripts/rsl_rl/lift_and_place_cfg.py`.
+`scripts/rsl_rl/lift_and_place_cfg.py`. Add `--vision` to drive the chain from
+the camera instead of ground-truth cube pose (see the vision section above).
 
 ---
 
