@@ -56,8 +56,9 @@ parser.add_argument(
 )
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
-if args_cli.vision:
-    args_cli.enable_cameras = True  # the vision obs terms need the camera rendered
+# The chain env's scene always includes a workspace camera (used by --vision, unused
+# otherwise), so rendering must be enabled either way or env creation fails outright.
+args_cli.enable_cameras = True
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
