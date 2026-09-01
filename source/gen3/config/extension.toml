@@ -7,12 +7,12 @@ version = "0.1.0"
 category = "isaaclab"
 readme  = "README.md"
 
-title = "Extension Template"
+title = "Kinova Gen3 RL Pick-and-Place"
 author = "Isaac Lab Project Developers"
 maintainer = "Isaac Lab Project Developers"
-description="Extension Template for Isaac Lab"
-repository = "https://github.com/isaac-sim/IsaacLab.git"
-keywords = ["extension", "template", "isaaclab"]
+description="Isaac Lab tasks (reach, grasp, lift-and-place) for RL pick-and-place with the Kinova Gen3 + Robotiq 2F-140"
+repository = "https://github.com/IdoRaviel/kinova_isaaclab_sim2real"
+keywords = ["isaaclab", "kinova", "manipulation", "reinforcement-learning", "pick-and-place"]
 
 [dependencies]
 "isaaclab" = {}

@@ -95,6 +95,9 @@ class ChainCfg:
     # ---- misc ----
     real_time: bool = False
     reach_only: bool = False  # debug: run only the reach phase (skip grasp + carry)
+    diagnostic_print_interval_steps: int = (
+        50  # console diagnostics printed every N control steps (play + data collection)
+    )
 
 
 CFG = ChainCfg()

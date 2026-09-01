@@ -376,7 +376,7 @@ def main():
                 pct = 100.0 * episodes_carried / episodes_done
                 print(f"[episodes] {episodes_carried}/{episodes_done} reached CARRY ({pct:.0f}%)")
 
-        if timestep % 50 == 0:
+        if timestep % CFG.diagnostic_print_interval_steps == 0:
             cube_b, _ = subtract_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w,
                                                   obj.data.root_pos_w)
             ph = "reach" if CFG.reach_only else PHASE_NAME[int(phase[0])]

@@ -1,4 +1,21 @@
-"""Script to evaluate an RL agent checkpoint and report metrics."""
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+# All rights reserved.
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+"""Evaluate a trained RSL-RL policy headlessly and report quantitative metrics.
+
+Unlike ``play.py`` (which renders for visual inspection), this runs a policy for a
+fixed number of steps across many parallel envs with no rendering, then prints
+mean/std position and orientation error plus mean reward -- for numeric comparison
+between checkpoints (e.g. before/after a retrain).
+
+Loads either a TorchScript JIT-exported policy or a raw rsl-rl training checkpoint,
+whichever ``resume_path`` turns out to be. Metrics are pulled from the env's
+``command_manager`` terms (``position_error``/``orientation_error``), so they're only
+reported for tasks whose command term exposes them (e.g. reach's ``ee_pose`` command);
+other tasks just get the mean-reward line.
+"""
 
 from importlib.metadata import version as get_version
 import sys
@@ -79,6 +96,8 @@ def main():
     # load policy — handle both JIT models and rsl-rl checkpoints
     device = env.unwrapped.device
     try:
+        # An exported policy (from play.py's --video/export flow, if any) is a
+        # TorchScript module; a raw training checkpoint is not, and jit.load raises.
         jit_model = torch.jit.load(resume_path, map_location=device)
         policy = jit_model
         print("[INFO]: Loaded as TorchScript JIT model.")
@@ -102,14 +121,17 @@ def main():
     with torch.inference_mode():
         for step in range(args_cli.num_steps):
             if is_jit:
-                # JIT models expect a plain tensor, not TensorDict
+                # JIT-traced models were exported to take a flat tensor input, not the
+                # TensorDict/dict-of-tensors the env normally hands the rsl-rl policy.
                 obs_tensor = torch.cat([v for v in obs.values()], dim=-1) if hasattr(obs, "values") else obs
                 actions = policy(obs_tensor)
             else:
                 actions = policy(obs)
             obs, rewards, dones, extras = env.step(actions)
 
-            # collect metrics from the environment
+            # Pull position/orientation error straight from the command term's own
+            # metrics dict rather than recomputing them here, so this matches exactly
+            # what the reward/logging already consider "the error".
             unwrapped = env.unwrapped
             for term in unwrapped.command_manager._terms.values():
                 if hasattr(term, "metrics"):

@@ -16,7 +16,6 @@ Key design choices:
 import math
 
 from isaaclab.assets import RigidObjectCfg
-from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
@@ -34,7 +33,7 @@ from . import mdp
 from .agents.rsl_rl_ppo_cfg import Gen3GraspPPORunnerCfg as _RunnerCfg
 
 from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
-from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
+from gen3.assets import FINGERTIP_OFFSET_M, KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
@@ -54,20 +53,11 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
         self.sim.dt = 1.0 / 60.0
 
         # --- Robot ---
+        # (init_state is inherited from KINOVA_GEN3_2F140_CFG unchanged -- this task
+        # does not need a different default pose; the IK-randomized reset below
+        # overwrites joint state every episode anyway.)
         self.scene.robot = KINOVA_GEN3_2F140_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
-            init_state=ArticulationCfg.InitialStateCfg(
-                joint_pos={
-                    "joint_1": 0.0,
-                    "joint_2": 0.3,
-                    "joint_3": 0.0,
-                    "joint_4": 1.8,
-                    "joint_5": 0.0,
-                    "joint_6": 0.7,
-                    "joint_7": 0.0,
-                    "finger_joint": 0.0,
-                }
-            ),
         )
 
         # --- Actions: arm (7 joints) + gripper (binary open/close) ---
@@ -215,7 +205,7 @@ class Gen3GraspEnvCfg(LiftEnvCfg):
                     prim_path="{ENV_REGEX_NS}/Robot/gen3n7_instanceable/end_effector_link",
                     name="end_effector",
                     offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.21],
+                        pos=[0.0, 0.0, FINGERTIP_OFFSET_M],
                     ),
                 ),
             ],

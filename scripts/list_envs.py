@@ -10,7 +10,7 @@ The script iterates over all registered environments and stores the details in a
 It prints the name of the environment, the entry point and the config file.
 
 All the environments are registered in the `gen3` extension. They start
-with `Isaac` in their name.
+with `Gen3-` in their name.
 """
 
 """Launch Isaac Sim Simulator first."""

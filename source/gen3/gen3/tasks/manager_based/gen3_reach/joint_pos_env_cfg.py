@@ -36,7 +36,7 @@ from isaaclab_tasks.manager_based.manipulation.reach.reach_env_cfg import ReachE
 from . import mdp
 from .agents.rsl_rl_ppo_cfg import Gen3ReachPPORunnerCfg as _RunnerCfg
 
-from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
+from gen3.assets import FINGERTIP_OFFSET_M, KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
@@ -210,7 +210,7 @@ class Gen3ReachEnvCfg(ReachEnvCfg):
                 FrameTransformerCfg.FrameCfg(
                     prim_path="{ENV_REGEX_NS}/Robot/gen3n7_instanceable/end_effector_link",
                     name="end_effector",
-                    offset=OffsetCfg(pos=[0.0, 0.0, 0.21]),
+                    offset=OffsetCfg(pos=[0.0, 0.0, FINGERTIP_OFFSET_M]),
                 ),
             ],
         )

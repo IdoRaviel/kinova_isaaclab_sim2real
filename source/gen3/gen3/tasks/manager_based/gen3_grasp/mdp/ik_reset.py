@@ -27,6 +27,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from gen3.assets import FINGERTIP_OFFSET_M, KINOVA_GEN3_2F140_CFG
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
@@ -40,7 +42,9 @@ _EE_LINK = "gen3_end_effector_link"
 _PI = math.pi
 _LOWER = [-_PI, -2.41, -_PI, -2.66, -_PI, -2.23, -_PI]
 _UPPER = [_PI, 2.41, _PI, 2.66, _PI, 2.23, _PI]
-_CANONICAL = [0.0, 0.3, 0.0, 1.8, 0.0, 0.7, 0.0]
+# Derived from the robot's own default pose (KINOVA_GEN3_2F140_CFG) rather than a second
+# hardcoded copy, so this can never silently drift from the arm's actual spawn/rest pose.
+_CANONICAL = [KINOVA_GEN3_2F140_CFG.init_state.joint_pos[f"joint_{i}"] for i in range(1, 8)]
 
 
 class _ArmIK:
@@ -225,7 +229,7 @@ def reset_above_cube_ik(
     cube_z: float = 0.055,
     yaw_range: tuple[float, float] = (-math.pi, math.pi),
     hover: float = 0.12,
-    tool_offset: float = 0.21,
+    tool_offset: float = FINGERTIP_OFFSET_M,
     jitter_deg: float = 15.0,
     num_seeds: int = 4,
     cube_jitter: float = 0.0,
@@ -239,7 +243,8 @@ def reset_above_cube_ik(
         yaw_range:   (min, max) range for the cube yaw (rad).
         hover:       Gripper hover height above the cube top (m).
         tool_offset: Distance from the wrist flange to the fingertip grasp point (m).
-                     Must match the ee_frame offset in the env config (+0.21 m).
+                     Must match the ee_frame offset in the env config
+                     (``gen3.assets.FINGERTIP_OFFSET_M``).
         jitter_deg:  Random yaw jitter added on top of the nearest-face snap (degrees).
         num_seeds:   IK seeds tried per target; more seeds -> higher convergence rate.
         cube_jitter: Max lateral offset applied to the cube after table placement (m),

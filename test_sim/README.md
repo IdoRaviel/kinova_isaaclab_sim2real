@@ -6,7 +6,7 @@ that the physics, USD, and gripper mechanics are correct before training.
 
 Both scripts load the robot from the canonical USD at:
 ```
-source/gen3/gen3_2f140/kinova_gen3_robotiq_2f_140.usd
+source/gen3/gen3/assets/gen3_2f140/kinova_gen3_robotiq_2f_140.usd
 ```
 
 ---

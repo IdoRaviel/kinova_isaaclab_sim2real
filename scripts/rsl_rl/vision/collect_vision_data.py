@@ -25,8 +25,13 @@ CLI options for what's specific to data collection (output location, frame budge
 """
 
 import argparse
+import os
+import sys
 
 from isaaclab.app import AppLauncher
+
+# add parent directory to path so lift_and_place_cfg can be found
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lift_and_place_cfg import CFG
 
@@ -109,9 +114,13 @@ HALF_PI = math.pi / 2.0
 # near-duplicate static frames don't dominate the dataset. REACH/GRASP/CARRY save every step.
 PAUSE_SAVE_STRIDE = 5
 
-# Cube half-size (m), measured directly from the DexCube USD asset's bounding box (see
-# check_cube_size.py): base asset half-size 0.03 m x the 1.2 scale factor used at spawn.
-CUBE_HALF_SIZE = 0.036
+# Cube half-size (m): the DexCube USD asset's base half-size (0.03 m) times the spawn
+# scale factor used by the grasp/lift_and_place env configs' cube RigidObjectCfg
+# (scale=(1.2, 1.2, 1.2)) -- expressed as a product, not a bare literal, so it stays
+# self-evidently correct if that scale factor ever changes.
+_DEXCUBE_BASE_HALF_SIZE_M = 0.03
+_CUBE_SPAWN_SCALE = 1.2
+CUBE_HALF_SIZE = _DEXCUBE_BASE_HALF_SIZE_M * _CUBE_SPAWN_SCALE
 _CORNER_SIGNS = torch.tensor(
     [[sx, sy, sz] for sx in (-1.0, 1.0) for sy in (-1.0, 1.0) for sz in (-1.0, 1.0)]
 )
@@ -444,7 +453,7 @@ def main():
             prev_ee_w[done_ids] = ee_frame.data.target_pos_w[done_ids, 0, :]
             set_above_cube_target(done_ids)
 
-        if timestep % 50 == 0:
+        if timestep % CFG.diagnostic_print_interval_steps == 0:
             print(f"[t {timestep}] saved {saved_count}/{args_cli.num_frames} frames")
         timestep += 1
 

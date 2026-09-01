@@ -1,8 +1,8 @@
 """Kinova Gen3 7-DoF arm + Robotiq 2F-140 gripper asset configuration.
 
-Loads the robot from the vendored USD at source/gen3/gen3_2f140/ and
-exposes KINOVA_GEN3_2F140_CFG, the ArticulationCfg imported by all
-training environments (reach, grasp, lift-and-place).
+Loads the robot from the vendored USD at gen3/assets/gen3_2f140/ (alongside
+this file) and exposes KINOVA_GEN3_2F140_CFG, the ArticulationCfg imported by
+all training environments (reach, grasp, lift-and-place).
 
 Actuator gains (stiffness/damping) were tuned for stable joint-position
 control at dt=1/60 s, decimation=2, matching the sim timing used across
@@ -16,8 +16,14 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
 
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-USD_PATH = _REPO_ROOT / "source" / "gen3" / "gen3_2f140" / "kinova_gen3_robotiq_2f_140.usd"
+USD_PATH = Path(__file__).resolve().parent / "gen3_2f140" / "kinova_gen3_robotiq_2f_140.usd"
+
+# Distance (m) from the wrist flange (end_effector_link) to the fingertip grasp point,
+# along the flange's local z-axis. Used everywhere an `ee_frame` FrameTransformer or the
+# grasp task's IK reset needs the fingertip pose rather than the flange pose -- keeping a
+# single source of truth here means the reach/grasp/lift_and_place env configs and the
+# grasp IK reset can never drift out of sync with each other.
+FINGERTIP_OFFSET_M = 0.21
 
 
 KINOVA_GEN3_2F140_CFG = ArticulationCfg(

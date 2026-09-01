@@ -1,3 +1,5 @@
+"""Shared Isaac Sim scene (robot, cube, table, ground, light) for the test_sim sanity scripts."""
+
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
@@ -10,7 +12,9 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-USD_PATH = os.path.join(_REPO_ROOT, "source", "gen3", "gen3_2f140", "kinova_gen3_robotiq_2f_140.usd")
+USD_PATH = os.path.join(
+    _REPO_ROOT, "source", "gen3", "gen3", "assets", "gen3_2f140", "kinova_gen3_robotiq_2f_140.usd"
+)
 
 GRIPPER_OPEN = {"finger_joint": 0.0}
 GRIPPER_CLOSE = {"finger_joint": 0.700}

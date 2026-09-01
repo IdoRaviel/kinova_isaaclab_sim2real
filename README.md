@@ -75,7 +75,9 @@ phases.
 Dataset layout (`vision_dataset/`):
 
 ```
-images/NNNNNN.png                RGB frames (320x240)
+images/NNNNNN.png                RGB frames (640x480, the camera's native
+                                   resolution; train_cube_pose.py resizes to
+                                   320x240 by default at training time)
 labels.jsonl                     one JSON record per frame:
                                    file, env_id, step, phase,
                                    cube_pos (robot-root frame, m),
@@ -189,6 +191,33 @@ The reach task also supports training with rl_games:
 ```bash
 python scripts/rl_games/train.py --task Gen3-Reach-v0
 ```
+
+---
+
+## Repository map
+
+| Path | What it is |
+|---|---|
+| `source/gen3/` | The Isaac Lab extension: robot asset + reach/grasp/lift-and-place task definitions |
+| `scripts/rsl_rl/` | Training/play/eval scripts, the chain play script, and the vision pipeline — this project's main code |
+| `scripts/sim2real/`, `scripts/rl_games/` | Inherited from the upstream repo / Isaac Lab templates — not part of this project's tested workflow |
+| `test_sim/` | Manual physics/gripper sanity scripts, **not** an automated test suite — see [`test_sim/README.md`](test_sim/README.md) |
+| `pretrained_models/` | Shipped checkpoints: reach, grasp, and the vision pose model |
+| `report/` | The academic project report ([PDF](report/kinova_project_report.pdf)) — training curves, full hyperparameters, and the experimental story behind the design choices above |
+| `docs/` | Detailed repository/architecture/configuration/extension documentation |
+
+**Documentation index** — more detail than fits in this README:
+
+| Topic | Doc |
+|---|---|
+| Repository structure (what's project vs. inherited, every directory explained) | [`docs/repository_structure.md`](docs/repository_structure.md) |
+| Architecture (task registry, state machine, coordinate/unit conventions) | [`docs/architecture.md`](docs/architecture.md) |
+| Step-by-step reproduction (train/play/vision, every command verified) | [`docs/running_and_reproduction.md`](docs/running_and_reproduction.md) |
+| Configuration (every tunable value, file, default, units, effect) | [`docs/configuration.md`](docs/configuration.md) |
+| Vision pipeline (camera, `meta.json`, dataset, training, sim-vs-real) | [`docs/vision_pipeline.md`](docs/vision_pipeline.md) |
+| Extending the project (new task, new algorithm, swap robot/gripper/camera) | [`docs/extending_the_project.md`](docs/extending_the_project.md) |
+| Testing/debugging utilities | [`docs/testing_and_debugging.md`](docs/testing_and_debugging.md) |
+| Project report | [`report/kinova_project_report.pdf`](report/kinova_project_report.pdf) |
 
 ---
 

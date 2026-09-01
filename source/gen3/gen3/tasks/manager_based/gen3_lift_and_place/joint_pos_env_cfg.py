@@ -31,7 +31,7 @@ from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvC
 from . import mdp
 
 from isaaclab.markers.config import SPHERE_MARKER_CFG  # isort: skip
-from gen3.assets import KINOVA_GEN3_2F140_CFG  # isort: skip
+from gen3.assets import FINGERTIP_OFFSET_M, KINOVA_GEN3_2F140_CFG  # isort: skip
 
 
 @configclass
@@ -166,7 +166,7 @@ class Gen3LiftAndPlaceEnvCfg(LiftEnvCfg):
                     prim_path="{ENV_REGEX_NS}/Robot/gen3n7_instanceable/end_effector_link",
                     name="end_effector",
                     offset=OffsetCfg(
-                        pos=[0.0, 0.0, 0.21],
+                        pos=[0.0, 0.0, FINGERTIP_OFFSET_M],
                     ),
                 ),
             ],
